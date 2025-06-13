@@ -4,13 +4,18 @@ from googleapiclient.discovery import build
 import PyPDF2
 import os
 
-if "GOOGLE_APPLICATION_CREDENTIALS" in os.environ:
+if "gdrive_creds" in st.secrets:  # Prüft direkt die Streamlit Secrets
     creds = service_account.Credentials.from_service_account_info(
-        st.secrets["gdrive_creds"]["json"]
+        st.secrets["gdrive_creds"]
     )
     drive_service = build('drive', 'v3', credentials=creds)
+    st.success("✅ Mit Google Drive verbunden!")
 else:
-    st.error("Lokaler Modus: Bitte in Google Colab ausführen!")
+    st.error("Fehler: Google Drive-Anmeldedaten fehlen. Bitte Secrets prüfen.")
 
-st.title("IRW-Bot mit Langzeitgedächtnis")
-st.success("Verbindung erfolgreich!")
+# App-UI
+st.title("🦊 Bot mit Langzeitgedächtnis")
+st.markdown("""
+    **Willkommen!** Mein Wissen wird in Google Drive gespeichert.  
+    Lade die Aufgabe einfach hoch!
+""")
