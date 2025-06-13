@@ -1,27 +1,17 @@
-import os
-from pyngrok import ngrok
-import subprocess
+import streamlit as st
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+import PyPDF2
+import os  
 
-os.system("pkill -f ngrok")
+if "GOOGLE_APPLICATION_CREDENTIALS" in os.environ:
+    creds = service_account.Credentials.from_service_account_info(
+        st.secrets["gdrive_creds"]["json"]
+    )
+    drive_service = build('drive', 'v3', credentials=creds)
+else: 
+    from google.colab import drive
+    drive.mount('/content/drive')
 
-
-PORT = 8501
-NGROK_TOKEN = "2ySRhpIJpvLjTWQLAiqxyHmI5Vy_4fRVTCmnNCKqVMD7jEcnq"
-
-
-!pip install -q pyngrok streamlit
-
-
-ngrok.set_auth_token(NGROK_TOKEN)
-
-
-process = subprocess.Popen([
-    "streamlit", "run", "app.py",
-    "--server.port", str(PORT),
-    "--server.headless", "true",
-    "--browser.serverAddress", "0.0.0.0"
-], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-public_url = ngrok.connect(PORT)
-print("🔗 Öffentlicher Link:", public_url)
+st.title("🔍 IRW-Bot mit Langzeitgedächtnis")
+st.write("Läuft erfolgreich! 🎉")
