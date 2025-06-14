@@ -9,7 +9,6 @@ import zipfile
 import os
 
 # --- UI-Einstellungen ---
-st.set_page_config(layout="centered")
 st.title("🦊 Koifox-Bot")
 st.markdown("""
     *This application uses Google's Gemini for OCR and Anthropic's Claude for answering advanced accounting questions.*  
@@ -86,7 +85,7 @@ drive_knowledge = ""
 if drive_service and "drive_file" in st.session_state:
     drive_knowledge = load_knowledge_from_drive(drive_service)
     if drive_knowledge:
-        st.success("📌 Wissen erfolgreich geladen!")
+        st.success("Wissen erfolgreich geladen!")
     else:
         st.warning("ℹ️ Kein Wissen aus Drive geladen")
 
@@ -98,7 +97,6 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file:
     # --- OCR mit Gemini ---
-   try:
     genai.configure(api_key=st.secrets["gemini_key"])
     model = genai.GenerativeModel("gemini-pro-vision")
     image = Image.open(uploaded_file)
@@ -142,16 +140,16 @@ if uploaded_file:
                         {
                             "role": "user",
                             "content": f"""
-                            Internes Rechnungswesen-Frage:\n\n{extracted_text}\n\n
-                        Hintergrundwissen:\n\n{st.session_state.drive_knowledge}
-                        """
-                    }]
+                            Hier ist eine Frage zum Internen Rechnungswesen. (extrahiert aus einem Bild):\n\n{extracted_text}\n\n
+                            Beantworte die Frage präzise auf Deutsch. Nutze dafür dieses Hintergrundwissen:\n\n{drive_knowledge}
+                            """
+                        }
+                    ]
                 )
-                st.markdown("### Antwort:")
+                st.write("**Antwort von Claude:**")
                 st.markdown(response.content[0].text)
-                
-        except Exception as e:
-            st.error("Analyse fehlgeschlagen. Bitte versuchen Sie es mit einem anderen Bild.")
-       
-       except Exception as e:
+            except Exception as e:
+                st.error(f"🔴 Claude-Fehler: {str(e)}", icon="❌")
+
+      except Exception as e:  # <- Das ist der fehlende except-Block
         st.error("Initialisierung fehlgeschlagen. Bitte kontaktieren Sie den Support.")
