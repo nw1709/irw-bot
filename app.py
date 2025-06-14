@@ -98,6 +98,7 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file:
     # --- OCR mit Gemini ---
+   try:
     genai.configure(api_key=st.secrets["gemini_key"])
     model = genai.GenerativeModel("gemini-pro-vision")
     image = Image.open(uploaded_file)
@@ -151,3 +152,6 @@ if uploaded_file:
                 
         except Exception as e:
             st.error("Analyse fehlgeschlagen. Bitte versuchen Sie es mit einem anderen Bild.")
+       
+       except Exception as e:
+        st.error("Initialisierung fehlgeschlagen. Bitte kontaktieren Sie den Support.")
