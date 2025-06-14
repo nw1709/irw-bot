@@ -16,8 +16,9 @@ st.markdown("""
 """)
 
 # --- Google Drive-Verbindung ---
+drive_service = None
 if "gdrive_creds" in st.secrets:
-    try:  # <- Diese Zeile muss korrekt eingerückt sein (z.B. 4 Leerzeichen vom if entfernt)
+    try:
         creds = service_account.Credentials.from_service_account_info(
             st.secrets["gdrive_creds"]
         )
@@ -27,7 +28,7 @@ if "gdrive_creds" in st.secrets:
         # Debug-Test
         try:
             results = drive_service.files().list(
-                q="name='TRW_Bot_Gehirn'",
+                q="name='IRW_Bot_Gehirn'",
                 pageSize=1,
                 fields="files(id, name, mimeType)"
             ).execute()
@@ -35,30 +36,39 @@ if "gdrive_creds" in st.secrets:
             
             if files:
                 file = files[0]
-                st.json(file)  # Sauberere Darstellung
-                st.write(f"Datei gefunden: {file['name']} | Typ: {file['mimeType']}")
+                st.session_state.drive_file = file
+                st.json(file)
+                st.write(f"📁 Datei gefunden: {file['name']} | Typ: {file['mimeType']}")
             else:
-                st.warning("Keine Dateien gefunden")
+                st.warning("⚠️ Ordner 'IRW_Bot_Gehirn' nicht gefunden")
                 
         except Exception as e:
-            st.error(f"Debug-Fehler: {str(e)}")
+            st.error(f"🔴 Debug-Fehler: {str(e)}", icon="🚨")
             
     except Exception as e:
-        st.error(f"Verbindungsfehler: {str(e)}")  # Nur ein Argument
+        st.error(f"🔴 Verbindungsfehler: {str(e)}", icon="❌")
 else:
-    st.error("Google Drive-Anmeldedaten fehlen.")
+    st.error("🔴 Google Drive-Anmeldedaten fehlen", icon="⚠️")
 
 # --- Funktion zum Laden von Wissen aus Drive ---
-def load_knowledge_from_drive(drive_service, file_id="1ymKuU_wjSUmrO_DMpsb54SwvBTULyexG"):
+def load_knowledge_from_drive(drive_service, file_id=None):
     try:
-        # 1. Prüfe Datei-Metadaten
+        if not file_id and "drive_file" in st.session_state:
+            file_id = st.session_state.drive_file["id"]
+        
+        if not file_id:
+            st.error("🔴 Keine Datei-ID angegeben", icon="⚠️")
+            return ""
+
         file_meta = drive_service.files().get(
             fileId=file_id,
-            fields="name,mimeType,size"
+            fields="name,mimeType"
         ).execute()
-        st.write("📁 Datei gefunden:", file_meta["name"], "| Typ:", file_meta["mimeType"])
 
-        # 2. Lade Dateiinhalt
+        if file_meta["mimeType"] == "application/vnd.google-apps.folder":
+            st.error("🔴 Bitte eine Datei angeben, kein Ordner", icon="📁")
+            return ""
+
         if "application/zip" in file_meta["mimeType"]:
             downloaded = drive_service.files().get_media(fileId=file_id).execute()
             with zipfile.ZipFile(io.BytesIO(downloaded)) as zip_ref:
@@ -69,15 +79,17 @@ def load_knowledge_from_drive(drive_service, file_id="1ymKuU_wjSUmrO_DMpsb54SwvB
                             knowledge += f.read().decode("utf-8", errors="ignore") + "\n\n"
                 return knowledge
         else:
-            st.error("🔴 Keine ZIP-Datei! MIME-Typ:", file_meta["mimeType"])
+            st.error(f"🔴 Keine ZIP-Datei! MIME-Typ: {file_meta['mimeType']}", icon="⚠️")
             return ""
 
     except Exception as e:
-        st.error(f"🔴 Kritischer Fehler: {str(e)}")
+        st.error(f"🔴 Kritischer Fehler beim Laden: {str(e)}", icon="❌")
         return ""
 
 # --- Wissen VOR der Bildverarbeitung laden ---
-drive_knowledge = load_knowledge_from_drive(drive_service) if "gdrive_creds" in st.secrets else ""
+drive_knowledge = ""
+if drive_service:
+    drive_knowledge = load_knowledge_from_drive(drive_service)
 
 # --- Bild-Upload und Verarbeitung ---
 uploaded_file = st.file_uploader(
@@ -93,31 +105,41 @@ if uploaded_file:
     st.image(image, caption="Hochgeladenes Bild", width=300)
     
     with st.spinner("Extrahiere Text mit Gemini..."):
-        response = model.generate_content(["Extrahier den Text aus diesem Bild.", image])
-        extracted_text = response.text
-        st.write("**Extrahiertes Text:**")
-        st.code(extracted_text)
+        try:
+            response = model.generate_content(["Extrahier den Text aus diesem Bild.", image])
+            extracted_text = response.text
+            st.write("**Extrahiertes Text:**")
+            st.code(extracted_text)
+        except Exception as e:
+            st.error(f"🔴 OCR-Fehler: {str(e)}", icon="❌")
+            extracted_text = ""
 
     # --- Antwort mit Claude ---
     if extracted_text:
         client = Anthropic(api_key=st.secrets["claude_key"])
         with st.spinner("Claude denkt nach..."):
-            response = client.messages.create(
-                model="claude-3-opus-20240229",
-                max_tokens=4000,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": f"""
-                        Hier ist eine Accounting-Frage (extrahiert aus einem Bild):\n\n{extracted_text}\n\n
-                        Beantworte die Frage präzise auf Deutsch. Nutze falls nötig dieses Hintergrundwissen:\n\n{drive_knowledge}
-                        """
-                    }
-                ]
-            )
-            st.write("**Antwort von Claude:**")
-            st.markdown(response.content[0].text)
+            try:
+                response = client.messages.create(
+                    model="claude-3-opus-20240229",
+                    max_tokens=4000,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": f"""
+                            Hier ist eine Accounting-Frage (extrahiert aus einem Bild):\n\n{extracted_text}\n\n
+                            Beantworte die Frage präzise auf Deutsch. Nutze falls nötig dieses Hintergrundwissen:\n\n{drive_knowledge}
+                            """
+                        }
+                    ]
+                )
+                st.write("**Antwort von Claude:**")
+                st.markdown(response.content[0].text)
+            except Exception as e:
+                st.error(f"🔴 Claude-Fehler: {str(e)}", icon="❌")
 
 # Debug-Option (optional)
-with st.expander("🔍 Debug: Geladenes Wissen anzeigen"):
-    st.text(drive_knowledge[:1000] + "...")
+if drive_knowledge:
+    with st.expander("🔍 Debug: Geladenes Wissen anzeigen"):
+        st.text(drive_knowledge[:1000] + "...")
+else:
+    st.warning("ℹ️ Kein Wissen aus Drive geladen")
