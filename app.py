@@ -25,11 +25,26 @@ if "gdrive_creds" in st.secrets:
         st.success("✔ Mit Google Drive verbunden!")
         
         # Debug-Test
-        results = drive_service.files().list(pageSize=1, fields="files(id, name)").execute()
-        st.write("Debug: Erste Datei im Drive:", results.get('files', []))
-        
-    except Exception as e:  # <- Muss auf gleicher Ebene wie try sein
-        st.error(f"Fehler: {str(e)}")
+        try:
+            results = drive_service.files().list(
+                q="name='TRW_Bot_Gehirn'",
+                pageSize=1,
+                fields="files(id, name, mimeType)"
+            ).execute()
+            files = results.get('files', [])
+            
+            if files:
+                file = files[0]
+                st.json(file)  # Sauberere Darstellung
+                st.write(f"Datei gefunden: {file['name']} | Typ: {file['mimeType']}")
+            else:
+                st.warning("Keine Dateien gefunden")
+                
+        except Exception as e:
+            st.error(f"Debug-Fehler: {str(e)}")
+            
+    except Exception as e:
+        st.error(f"Verbindungsfehler: {str(e)}")  # Nur ein Argument
 else:
     st.error("Google Drive-Anmeldedaten fehlen.")
 
