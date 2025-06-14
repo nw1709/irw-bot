@@ -9,6 +9,7 @@ import zipfile
 import os
 
 # --- UI-Einstellungen ---
+st.set_page_config(layout="centered")
 st.title("🦊 Koifox-Bot")
 st.markdown("""
     *This application uses Google's Gemini for OCR and Anthropic's Claude for answering advanced accounting questions.*  
@@ -23,7 +24,7 @@ if "gdrive_creds" in st.secrets:
             st.secrets["gdrive_creds"]
         )
         drive_service = build("drive", "v3", credentials=creds)
-        st.success("📌 Mit Google Drive verbunden!")
+        st.success("Mit Google Drive verbunden!")
         
        # Silent Mode - Keine UI-Ausgaben außer bei Fehlern
         results = drive_service.files().list(
@@ -140,21 +141,13 @@ if uploaded_file:
                         {
                             "role": "user",
                             "content": f"""
-                            Hier ist eine Accounting-Frage (extrahiert aus einem Bild):\n\n{extracted_text}\n\n
-                            Beantworte die Frage präzise auf Deutsch. Nutze dafür dieses Hintergrundwissen:\n\n{drive_knowledge}
-                            """
-                        }
-                    ]
+                            Internes Rechnungswesen-Frage:\n\n{extracted_text}\n\n
+                        Hintergrundwissen:\n\n{st.session_state.drive_knowledge}
+                        """
+                    }]
                 )
-                st.write("**Antwort von Claude:**")
+                st.markdown("### Antwort:")
                 st.markdown(response.content[0].text)
-            except Exception as e:
-                st.error(f"🔴 Claude-Fehler: {str(e)}", icon="❌")
-
-# Debug-Option
-with st.expander("🔍 System-Status"):
-    if "drive_folder" in st.session_state:
-        st.write("Drive-Ordner:", st.session_state.drive_folder)
-    if "drive_file" in st.session_state:
-        st.write("Drive-Datei:", st.session_state.drive_file)
-    st.write("Wissens-Länge:", len(drive_knowledge))
+                
+        except Exception as e:
+            st.error("Analyse fehlgeschlagen. Bitte versuchen Sie es mit einem anderen Bild.")
