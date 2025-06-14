@@ -25,46 +25,30 @@ if "gdrive_creds" in st.secrets:
         drive_service = build("drive", "v3", credentials=creds)
         st.success("📌 Mit Google Drive verbunden!")
         
-        # Suche nach dem richtigen Ordner (TRW statt IRW)
-        try:
-            results = drive_service.files().list(
-                q="name='IRW_Bot_Gehirn' and mimeType='application/vnd.google-apps.folder'",
+       # Silent Mode - Keine UI-Ausgaben außer bei Fehlern
+        results = drive_service.files().list(
+            q="name='IRW_Bot_Gehirn' and mimeType='application/vnd.google-apps.folder'",
+            pageSize=1,
+            fields="files(id, name, mimeType)"
+        ).execute()
+        files = results.get('files', [])
+        
+        if files:
+            folder = files[0]
+            st.session_state.drive_folder = folder
+                
+                # Automatische ZIP-Suche ohne UI-Feedback
+            zip_files = drive_service.files().list(
+                q=f"'{folder['id']}' in parents and mimeType='application/zip'",
                 pageSize=1,
                 fields="files(id, name, mimeType)"
-            ).execute()
-            files = results.get('files', [])
+            ).execute().get('files', [])
             
-            if files:
-                folder = files[0]
-                st.session_state.drive_folder = folder
-                 # JSON in verstecktem Expander
-                with st.expander("🔍 Technische Ordnerdetails", expanded=False):
-                    st.json(folder)
-                
-                st.write(f"📌 Ordner gefunden: {folder['name']} | Typ: {folder['mimeType']}")
-                
-                # Suche nach ZIP-Dateien in diesem Ordner
-                zip_files = drive_service.files().list(
-                    q=f"'{folder['id']}' in parents and mimeType='application/zip'",
-                    pageSize=1,
-                    fields="files(id, name, mimeType)"
-                ).execute().get('files', [])
-                
-                if zip_files:
-                    st.session_state.drive_file = zip_files[0]
-                    st.success(f"📌 ZIP-Datei gefunden: {zip_files[0]['name']}")
-                else:
-                    st.warning("⚠️ Keine ZIP-Datei im Ordner gefunden")
-            else:
-                st.warning("⚠️ Keine ZIP-Datei im Ordner gefunden")
-                
-        except Exception as e:
-            st.error(f"🔴 Debug-Fehler: {str(e)}", icon="🚨")
+            if zip_files:
+                st.session_state.drive_file = zip_files[0]
             
     except Exception as e:
         st.error(f"🔴 Verbindungsfehler: {str(e)}", icon="❌")
-else:
-    st.error("🔴 Google Drive-Anmeldedaten fehlen", icon="⚠️")
 
 # --- Funktion zum Laden von Wissen aus Drive ---
 def load_knowledge_from_drive(drive_service):
