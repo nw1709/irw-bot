@@ -20,22 +20,40 @@ if "gdrive_creds" in st.secrets:
     creds = service_account.Credentials.from_service_account_info(st.secrets["gdrive_creds"])
     drive_service = build("drive", "v3", credentials=creds)
     st.success("✅ Mit Google Drive verbunden!")
+   try:
+        results = drive_service.files().list(pageSize=1, fields="files(id, name)").execute()
+        st.write("Debug: Erste Datei im Drive:", results.get('files', []))
+    except Exception as e:
+        st.error(f"Debug: Verbindungstest fehlgeschlagen: {str(e)}")
 else:
     st.error("Google Drive-Anmeldedaten fehlen.")
 
 # --- Funktion zum Laden von Wissen aus Drive ---
 def load_knowledge_from_drive(drive_service, file_id="1ymKuU_wjSUmrO_DMpsb54SwvBTULyexG"):
     try:
-        downloaded = drive_service.files().get_media(fileId=file_id).execute()
-        with zipfile.ZipFile(io.BytesIO(downloaded)) as zip_ref:
-            knowledge = ""
-            for file in zip_ref.namelist():
-                with zip_ref.open(file) as f:
+        # 1. Prüfe Datei-Metadaten
+        file_meta = drive_service.files().get(
+            fileId=file_id,
+            fields="name,mimeType,size"
+        ).execute()
+        st.write("📁 Datei gefunden:", file_meta["name"], "| Typ:", file_meta["mimeType"])
+
+        # 2. Lade Dateiinhalt
+        if "application/zip" in file_meta["mimeType"]:
+            downloaded = drive_service.files().get_media(fileId=file_id).execute()
+            with zipfile.ZipFile(io.BytesIO(downloaded)) as zip_ref:
+                knowledge = ""
+                for file in zip_ref.namelist():
                     if file.endswith((".txt", ".pdf")):
-                        knowledge += f.read().decode("utf-8", errors="ignore") + "\n\n"
-            return knowledge
+                        with zip_ref.open(file) as f:
+                            knowledge += f.read().decode("utf-8", errors="ignore") + "\n\n"
+                return knowledge
+        else:
+            st.error("🔴 Keine ZIP-Datei! MIME-Typ:", file_meta["mimeType"])
+            return ""
+
     except Exception as e:
-        st.error(f"Fehler beim Laden aus Google Drive: {e}")
+        st.error(f"🔴 Kritischer Fehler: {str(e)}")
         return ""
 
 # --- Wissen VOR der Bildverarbeitung laden ---
