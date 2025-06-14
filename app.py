@@ -17,14 +17,19 @@ st.markdown("""
 
 # --- Google Drive-Verbindung ---
 if "gdrive_creds" in st.secrets:
-    creds = service_account.Credentials.from_service_account_info(st.secrets["gdrive_creds"])
-    drive_service = build("drive", "v3", credentials=creds)
-    st.success("✅ Mit Google Drive verbunden!")
-   try:
+    try:  # <- Diese Zeile muss korrekt eingerückt sein (z.B. 4 Leerzeichen vom if entfernt)
+        creds = service_account.Credentials.from_service_account_info(
+            st.secrets["gdrive_creds"]
+        )
+        drive_service = build("drive", "v3", credentials=creds)
+        st.success("✔ Mit Google Drive verbunden!")
+        
+        # Debug-Test
         results = drive_service.files().list(pageSize=1, fields="files(id, name)").execute()
         st.write("Debug: Erste Datei im Drive:", results.get('files', []))
-    except Exception as e:
-        st.error(f"Debug: Verbindungstest fehlgeschlagen: {str(e)}")
+        
+    except Exception as e:  # <- Muss auf gleicher Ebene wie try sein
+        st.error(f"Fehler: {str(e)}")
 else:
     st.error("Google Drive-Anmeldedaten fehlen.")
 
