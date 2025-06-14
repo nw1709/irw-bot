@@ -23,24 +23,41 @@ if "gdrive_creds" in st.secrets:
             st.secrets["gdrive_creds"]
         )
         drive_service = build("drive", "v3", credentials=creds)
-        st.success("✔ Mit Google Drive verbunden!")
+        st.success("📌 Mit Google Drive verbunden!")
         
-        # Debug-Test
+        # Suche nach dem richtigen Ordner (TRW statt IRW)
         try:
             results = drive_service.files().list(
-                q="name='IRW_Bot_Gehirn'",
+                q="name='TRW_Bot_Gehirn' and mimeType='application/vnd.google-apps.folder'",
                 pageSize=1,
                 fields="files(id, name, mimeType)"
             ).execute()
             files = results.get('files', [])
             
             if files:
-                file = files[0]
-                st.session_state.drive_file = file
-                st.json(file)
-                st.write(f"📁 Datei gefunden: {file['name']} | Typ: {file['mimeType']}")
+                folder = files[0]
+                st.session_state.drive_folder = folder
+                st.json({
+                    "id": folder["id"],
+                    "name": folder["name"],
+                    "mimeType": folder["mimeType"]
+                })
+                st.write(f"📌 Ordner gefunden: {folder['name']} | Typ: {folder['mimeType']}")
+                
+                # Suche nach ZIP-Dateien in diesem Ordner
+                zip_files = drive_service.files().list(
+                    q=f"'{folder['id']}' in parents and mimeType='application/zip'",
+                    pageSize=1,
+                    fields="files(id, name, mimeType)"
+                ).execute().get('files', [])
+                
+                if zip_files:
+                    st.session_state.drive_file = zip_files[0]
+                    st.success(f"📌 ZIP-Datei gefunden: {zip_files[0]['name']}")
+                else:
+                    st.warning("⚠️ Keine ZIP-Datei im Ordner gefunden")
             else:
-                st.warning("⚠️ Ordner 'IRW_Bot_Gehirn' nicht gefunden")
+                st.warning("⚠️ Ordner 'TRW_Bot_Gehirn' nicht gefunden")
                 
         except Exception as e:
             st.error(f"🔴 Debug-Fehler: {str(e)}", icon="🚨")
@@ -51,45 +68,43 @@ else:
     st.error("🔴 Google Drive-Anmeldedaten fehlen", icon="⚠️")
 
 # --- Funktion zum Laden von Wissen aus Drive ---
-def load_knowledge_from_drive(drive_service, file_id=None):
+def load_knowledge_from_drive(drive_service):
     try:
-        if not file_id and "drive_file" in st.session_state:
-            file_id = st.session_state.drive_file["id"]
-        
-        if not file_id:
-            st.error("🔴 Keine Datei-ID angegeben", icon="⚠️")
+        if "drive_file" not in st.session_state:
+            st.error("🔴 Keine ZIP-Datei ausgewählt", icon="⚠️")
             return ""
-
+            
+        file_id = st.session_state.drive_file["id"]
         file_meta = drive_service.files().get(
             fileId=file_id,
             fields="name,mimeType"
         ).execute()
 
-        if file_meta["mimeType"] == "application/vnd.google-apps.folder":
-            st.error("🔴 Bitte eine Datei angeben, kein Ordner", icon="📁")
+        if file_meta["mimeType"] != "application/zip":
+            st.error("🔴 Bitte eine ZIP-Datei auswählen", icon="📁")
             return ""
 
-        if "application/zip" in file_meta["mimeType"]:
-            downloaded = drive_service.files().get_media(fileId=file_id).execute()
-            with zipfile.ZipFile(io.BytesIO(downloaded)) as zip_ref:
-                knowledge = ""
-                for file in zip_ref.namelist():
-                    if file.endswith((".txt", ".pdf")):
-                        with zip_ref.open(file) as f:
-                            knowledge += f.read().decode("utf-8", errors="ignore") + "\n\n"
-                return knowledge
-        else:
-            st.error(f"🔴 Keine ZIP-Datei! MIME-Typ: {file_meta['mimeType']}", icon="⚠️")
-            return ""
+        downloaded = drive_service.files().get_media(fileId=file_id).execute()
+        with zipfile.ZipFile(io.BytesIO(downloaded)) as zip_ref:
+            knowledge = ""
+            for file in zip_ref.namelist():
+                if file.endswith((".txt", ".pdf")):
+                    with zip_ref.open(file) as f:
+                        knowledge += f.read().decode("utf-8", errors="ignore") + "\n\n"
+            return knowledge
 
     except Exception as e:
-        st.error(f"🔴 Kritischer Fehler beim Laden: {str(e)}", icon="❌")
+        st.error(f"🔴 Fehler beim Laden: {str(e)}", icon="❌")
         return ""
 
-# --- Wissen VOR der Bildverarbeitung laden ---
+# --- Wissen laden ---
 drive_knowledge = ""
-if drive_service:
+if drive_service and "drive_file" in st.session_state:
     drive_knowledge = load_knowledge_from_drive(drive_service)
+    if drive_knowledge:
+        st.success("📌 Wissen erfolgreich geladen!")
+    else:
+        st.warning("ℹ️ Kein Wissen aus Drive geladen")
 
 # --- Bild-Upload und Verarbeitung ---
 uploaded_file = st.file_uploader(
@@ -137,9 +152,10 @@ if uploaded_file:
             except Exception as e:
                 st.error(f"🔴 Claude-Fehler: {str(e)}", icon="❌")
 
-# Debug-Option (optional)
-if drive_knowledge:
-    with st.expander("🔍 Debug: Geladenes Wissen anzeigen"):
-        st.text(drive_knowledge[:1000] + "...")
-else:
-    st.warning("ℹ️ Kein Wissen aus Drive geladen")
+# Debug-Option
+with st.expander("🔍 System-Status"):
+    if "drive_folder" in st.session_state:
+        st.write("Drive-Ordner:", st.session_state.drive_folder)
+    if "drive_file" in st.session_state:
+        st.write("Drive-Datei:", st.session_state.drive_file)
+    st.write("Wissens-Länge:", len(drive_knowledge))
