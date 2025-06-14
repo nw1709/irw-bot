@@ -28,7 +28,7 @@ if "gdrive_creds" in st.secrets:
         # Suche nach dem richtigen Ordner (TRW statt IRW)
         try:
             results = drive_service.files().list(
-                q="name='TRW_Bot_Gehirn' and mimeType='application/vnd.google-apps.folder'",
+                q="name='IRW_Bot_Gehirn' and mimeType='application/vnd.google-apps.folder'",
                 pageSize=1,
                 fields="files(id, name, mimeType)"
             ).execute()
@@ -57,7 +57,7 @@ if "gdrive_creds" in st.secrets:
                 else:
                     st.warning("⚠️ Keine ZIP-Datei im Ordner gefunden")
             else:
-                st.warning("⚠️ Ordner 'TRW_Bot_Gehirn' nicht gefunden")
+                st.warning("⚠️ Ordner 'IRW_Bot_Gehirn' nicht gefunden")
                 
         except Exception as e:
             st.error(f"🔴 Debug-Fehler: {str(e)}", icon="🚨")
@@ -142,7 +142,7 @@ if uploaded_file:
                             "role": "user",
                             "content": f"""
                             Hier ist eine Accounting-Frage (extrahiert aus einem Bild):\n\n{extracted_text}\n\n
-                            Beantworte die Frage präzise auf Deutsch. Nutze falls nötig dieses Hintergrundwissen:\n\n{drive_knowledge}
+                            Beantworte die Frage präzise auf Deutsch. Nutze dafür dieses Hintergrundwissen:\n\n{drive_knowledge}
                             """
                         }
                     ]
