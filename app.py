@@ -37,11 +37,10 @@ if "gdrive_creds" in st.secrets:
             if files:
                 folder = files[0]
                 st.session_state.drive_folder = folder
-                st.json({
-                    "id": folder["id"],
-                    "name": folder["name"],
-                    "mimeType": folder["mimeType"]
-                })
+                 # JSON in verstecktem Expander
+                with st.expander("🔍 Technische Ordnerdetails", expanded=False):
+                    st.json(folder)
+                
                 st.write(f"📌 Ordner gefunden: {folder['name']} | Typ: {folder['mimeType']}")
                 
                 # Suche nach ZIP-Dateien in diesem Ordner
@@ -57,7 +56,7 @@ if "gdrive_creds" in st.secrets:
                 else:
                     st.warning("⚠️ Keine ZIP-Datei im Ordner gefunden")
             else:
-                st.warning("⚠️ Ordner 'IRW_Bot_Gehirn' nicht gefunden")
+                st.warning("⚠️ Keine ZIP-Datei im Ordner gefunden")
                 
         except Exception as e:
             st.error(f"🔴 Debug-Fehler: {str(e)}", icon="🚨")
@@ -117,14 +116,30 @@ if uploaded_file:
     genai.configure(api_key=st.secrets["gemini_key"])
     model = genai.GenerativeModel("gemini-pro-vision")
     image = Image.open(uploaded_file)
-    st.image(image, caption="Hochgeladenes Bild", width=300)
+    st.image(image, caption="Hochgeladenes Bild", use_column_width=True)
     
     with st.spinner("Extrahiere Text mit Gemini..."):
         try:
             response = model.generate_content(["Extrahier den Text aus diesem Bild.", image])
             extracted_text = response.text
-            st.write("**Extrahiertes Text:**")
-            st.code(extracted_text)
+            st.subheader("Extrahierter Text")
+            with st.container(border=True):
+                st.markdown(f"""
+                <div style='
+                    max-height: 300px;
+                    overflow-y: auto;
+                    padding: 10px;
+                    background: #f8f9fa;
+                    border-radius: 5px;
+                '>
+                {extracted_text}
+                </div>
+                """, unsafe_allow_html=True)
+                
+            # Optional: Raw Text in Expander
+            with st.expander("🛠️ Rohdaten anzeigen", expanded=False):
+                st.code(extracted_text)
+         
         except Exception as e:
             st.error(f"🔴 OCR-Fehler: {str(e)}", icon="❌")
             extracted_text = ""
