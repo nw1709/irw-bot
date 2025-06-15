@@ -112,120 +112,138 @@ if drive_service and hasattr(st.session_state, 'drive_file_id'):
     except Exception as e:
         logger.error(f"Wissensladung fehlgeschlagen: {str(e)}")
         st.session_state.drive_knowledge = ""
-
 # --- Gemini 1.5 Flash Konfiguration ---
 genai.configure(api_key=st.secrets["gemini_key"])
 vision_model = genai.GenerativeModel("gemini-1.5-flash")
 
-# --- Bildverarbeitung ---
-uploaded_file = st.file_uploader(
-    "**Choose an exam paper image...**\n\nDrag and drop file here\nLimit 200MB per file - PNG, JPG, JPEG, WEBP, BMP",
-    type=["png", "jpg", "jpeg", "webp", "bmp"]
-)
+# --- Kombinierter Accounting Prompt (Original + Optimierungen) ---
+ACCOUNTING_PROMPT = """
+You are a highly qualified accounting expert with PhD-level knowledge of advanced university courses in accounting and finance. Your task is to answer questions in this domain precisely and without error.
 
+### STRICT RULES:
+1. **SOURCE BINDING**: Use ONLY the provided knowledge archive (university scripts). Never external methods!
+2. **EXAM FORMAT**: For each question:
+   - Identify question number (e.g., "Task 6")
+   - Extract ALL numbers and options (A/B/C)
+   - Follow the EXACT solution method from scripts
+3. **MULTI-TASK HANDLING**: When multiple questions are detected:
+   - Process each separately
+   - Number solutions (Task 1, Task 2...)
+   - Use the official format from past exams
+
+### OUTPUT FORMAT:
+<task nr="X">
+<question>FULL question text</question>
+<method>Script method used (e.g., "Grenzplankostenrechnung p.45")</method>
+<solution>
+Step-by-step calculation
+</solution>
+<answer>Final answer (Letter + Value)</answer>
+</task>
+
+### THEORETICAL SCOPE (ORIGINAL):
+• Cost-type, cost-center and cost-unit accounting
+• Full/variable/marginal costing systems
+• Flexible and Grenzplankostenrechnung
+• Contribution-margin accounting
+• Business-economics MRS convention
+• Activity-analysis models
+• Contribution-based pricing
+
+### CRITICAL:
+- If uncertain: "No matching method found in scripts"
+- NEVER deviate from script solutions!
+- 100% consistency with university standards
+"""
+
+# --- Bildverarbeitung mit Vorverarbeitung ---
 if uploaded_file:
     try:
-        # Bildvalidierung
+        # 1. Bild laden und optimieren
+        from PIL import ImageOps, ImageFilter
         image = Image.open(uploaded_file)
-        image.verify()
-        image = Image.open(uploaded_file)
-        st.image(image, caption="Hochgeladenes Bild", width=300)
         
-        # OCR mit Gemini 1.5 Flash
-        with st.spinner("Analysiere Prüfungsdokument..."):
+        # Bildoptimierung für Handyfotos
+        preprocessed_image = (
+            image.convert('L')  # Graustufen
+            .point(lambda x: 0 if x < 100 else 255)  # Kontrast
+            .filter(ImageFilter.SHARPEN)  # Textschärfung
+            .filter(ImageFilter.SMOOTH_MORE)  # Rauschreduzierung
+        )
+        
+        # Debug-Anzeige
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image(image, caption="Original", use_column_width=True)
+        with col2:
+            st.image(preprocessed_image, caption="Optimized", use_column_width=True)
+
+        # 2. Hochpräzise OCR
+        with st.spinner("Analyzing exam document..."):
             response = vision_model.generate_content(
                 [
-                    "Extrahieren Sie den Text präzise aus diesem Prüfungsdokument. Fokussiere auf:",
-                    "1. Zahlen und Rechnungen",
-                    "2. Fachbegriffe (Kostenrechnung, Controlling)",
-                    "3. Aufgabenstellungen mit (A), (B), (C) Optionen",
-                    image
+                    "Extract ALL exam tasks with:",
+                    "1. Complete question text",
+                    "2. All numbers and options (A/B/C...)",
+                    "3. Formulas and calculation steps",
+                    "Format: 'Task X: [Question] | Options: A)... B)...'",
+                    preprocessed_image
                 ],
                 generation_config={
-                    "temperature": 0.1,
-                    "max_output_tokens": 2000
+                    "temperature": 0,  # Maximale Deterministik
+                    "top_p": 0.3,
+                    "max_output_tokens": 4000
                 }
             )
             extracted_text = response.text
-        
-        # Claude Antwort (korrigierte Version ohne system role)
+
+        # 3. Claude Antwortgenerierung
         if extracted_text:
             client = Anthropic(api_key=st.secrets["claude_key"])
             
-            # Accounting Prompt als erste User-Nachricht
-            accounting_prompt = """You are a highly qualified accounting expert with PhD-level knowledge of advanced university courses in accounting and finance. Your task is to answer questions in this domain precisely and without error.
-
-THEORETICAL SCOPE
-Use only the decision-oriented German managerial-accounting (Controlling) framework.
-Include, in particular:
-
-• Cost-type, cost-center and cost-unit accounting (Kostenarten-, Kostenstellen-, Kostenträgerrechnung)
-• Full, variable, marginal, standard (Plankosten-) and process/ABC costing systems
-• Flexible and Grenzplankostenrechnung variance analysis
-• Single- and multi-level contribution-margin accounting and break-even logic
-• Causality & allocation (Verursachungs- und Zurechnungsprinzip)
-• Business-economics MRS convention (MRS = MP₂ / MP₁ unless stated otherwise)
-• Activity-analysis production & logistics models (LP, Standort- & Transportprobleme, Supply-Chain-Planungsmatrix)
-• Marketing segmentation, price-elasticity, contribution-based pricing & mix planning
-
-Do not apply IFRS/GAAP valuation, classical micro-economic MRS, or any other external doctrines unless the task explicitly demands them.
-
-Follow these steps to answer the question:
-
-1. Read the question extremely carefully. Pay special attention to avoid any errors in visual interpretation.
-
-2. Repeat the question in your reasoning by writing it down exactly as it appears in the image. Use the provided OCR text:
-
-<OCR_TEXT>
-{{OCR_TEXT}}
-</OCR_TEXT>
-
-3. Analyse the question step by step in your mind. Think thoroughly before answering to ensure your response is correct.
-
-4. Formulate your answer. It should be short yet complete. It is crucial that your answer is CORRECT—there is no room for error.
-
-5. Check your answer once more for accuracy and completeness.
-
-Your final answer must have the following format:
-<answer>
-YOUR ANSWER HERE
-</answer>"""
-            
             response = client.messages.create(
                 model="claude-3-opus-20240229",
-                max_tokens=4000,
                 messages=[
                     {
                         "role": "user",
                         "content": f"""
-                        {accounting_prompt}
+                        {ACCOUNTING_PROMPT}
                         
-                        <OCR_TEXT>
+                        <DOCUMENT>
                         {extracted_text}
-                        </OCR_TEXT>
+                        </DOCUMENT>
                         
-                        Hintergrundwissen:
+                        <KNOWLEDGE_BASE>
                         {st.session_state.get('drive_knowledge', '')}
+                        </KNOWLEDGE_BASE>
+                        
+                        Instructions:
+                        1. Solve ALL tasks sequentially
+                        2. Strictly follow script methods
+                        3. Use German accounting terminology
                         """
                     }
-                ]
+                ],
+                temperature=0,
+                seed=12345,
+                max_tokens=4000
             )
             
             # Antwortformatierung
             answer_content = response.content[0].text
-            answer = (answer_content.split("<answer>")[1].split("</answer>")[0].strip() 
-                     if "<answer>" in answer_content else answer_content)
-            
-            st.markdown("### Experten-Antwort:")
-            st.markdown(answer)
-    
+            if "<task nr=" in answer_content:
+                st.markdown("### Expert Solution:")
+                st.markdown(answer_content, unsafe_allow_html=True)
+            else:
+                st.markdown("### Answer:")
+                st.markdown(answer_content)
+
     except Exception as e:
-        logger.error(f"Verarbeitungsfehler: {str(e)}", exc_info=True)
-        st.error("Analyse fehlgeschlagen. Bitte versuchen Sie es mit einem anderen Bild oder kontaktieren Sie den Support.")
+        logger.error(f"Processing error: {str(e)}")
+        st.error("Analysis failed. Please try another image or contact support.")
         
-        # Debug-Info
-        with st.expander("Technische Details"):
-            st.text(f"Fehlertyp: {type(e).__name__}")
+        with st.expander("Technical Details"):
+            st.text(f"Error type: {type(e).__name__}")
             if hasattr(e, 'response'):
                 try:
                     st.json(e.response.json())
