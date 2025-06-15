@@ -112,6 +112,7 @@ if drive_service and hasattr(st.session_state, 'drive_file_id'):
     except Exception as e:
         logger.error(f"Wissensladung fehlgeschlagen: {str(e)}")
         st.session_state.drive_knowledge = ""
+        
 # --- Gemini 1.5 Flash Konfiguration ---
 genai.configure(api_key=st.secrets["gemini_key"])
 vision_model = genai.GenerativeModel("gemini-1.5-flash")
@@ -157,20 +158,29 @@ Step-by-step calculation
 """
 
 # --- Bildverarbeitung mit Vorverarbeitung ---
-if uploaded_file:
-    try:
-        # 1. Bild laden und optimieren
-        from PIL import ImageOps, ImageFilter
-        image = Image.open(uploaded_file)
-        
-        # Bildoptimierung für Handyfotos
-        preprocessed_image = (
-            image.convert('L')  # Graustufen
-            .point(lambda x: 0 if x < 100 else 255)  # Kontrast
-            .filter(ImageFilter.SHARPEN)  # Textschärfung
-            .filter(ImageFilter.SMOOTH_MORE)  # Rauschreduzierung
-        )
-        
+try:
+    uploaded_file = st.file_uploader(
+        "**Choose an exam paper image...**\n\nDrag and drop file here\nLimit 200MB per file - PNG, JPG, JPEG, WEBP, BMP",
+        type=["png", "jpg", "jpeg", "webp", "bmp"],
+        key="file_uploader"  # Wichtig für Session-Stability
+    )
+
+    if uploaded_file is not None:  # Explizite None-Prüfung
+        try:
+            # 1. Bildvalidierung  
+            image = Image.open(uploaded_file)
+            image.verify()
+            image = Image.open(uploaded_file)  # Neu öffnen nach verify()
+            
+            # 2. Bildoptimierung
+            from PIL import ImageOps, ImageFilter
+            preprocessed_image = (
+                image.convert('L')
+                .point(lambda x: 0 if x < 100 else 255)
+                .filter(ImageFilter.SHARPEN)
+                .filter(ImageFilter.SMOOTH_MORE)
+            )
+            
         # Debug-Anzeige
         col1, col2 = st.columns(2)
         with col1:
@@ -179,7 +189,7 @@ if uploaded_file:
             st.image(preprocessed_image, caption="Optimized", use_column_width=True)
 
         # 2. Hochpräzise OCR
-        with st.spinner("Analyzing exam document..."):
+        with st.spinner("Analysiere Dokument..."):
             response = vision_model.generate_content(
                 [
                     "Extract ALL exam tasks with:",
@@ -197,10 +207,9 @@ if uploaded_file:
             )
             extracted_text = response.text
 
-        # 3. Claude Antwortgenerierung
+        # 3. Claude-Antwortgenerierung
         if extracted_text:
             client = Anthropic(api_key=st.secrets["claude_key"])
-            
             response = client.messages.create(
                 model="claude-3-opus-20240229",
                 messages=[
@@ -239,13 +248,15 @@ if uploaded_file:
                 st.markdown(answer_content)
 
     except Exception as e:
-        logger.error(f"Processing error: {str(e)}")
-        st.error("Analysis failed. Please try another image or contact support.")
-        
-        with st.expander("Technical Details"):
-            st.text(f"Error type: {type(e).__name__}")
-            if hasattr(e, 'response'):
-                try:
-                    st.json(e.response.json())
-                except:
-                    st.text(str(e.response)[:500])
+            st.error(f"Bildverarbeitungsfehler: {str(e)}")
+            logger.error(f"Image processing failed: {str(e)}")
+            st.stop()
+
+except NameError as e:
+    st.error("Initialisierungsfehler. Bitte Seite neu laden.")
+    logger.critical(f"NameError occurred: {str(e)}")
+    raise st.StopException
+except Exception as e:
+    st.error("Unerwarteter Fehler. Bitte Support kontaktieren.")
+    logger.error(f"Unexpected error: {str(e)}")
+    st.stop()
