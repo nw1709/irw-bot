@@ -108,22 +108,13 @@ Read the question extremely carefully. Pay special attention to avoid any errors
 Analyse the question step by step in your mind. Think thoroughly before answering to ensure your response is correct.
 It is crucial that your answer is CORRECT—there is no room for error.
 
-Provide ONLY the direct answer to each task in this exact format:
+Answer exam questions using these rules:
 
-**Task [X]**: [Complete answer as required by the task]
-
-Rules:
-1. Give ONLY what the task requires - no explanations, calculations or references
-2. Use the exact same answer format as requested in the question
-3. For open-ended questions: provide a concise 1-sentence answer
-4. Preserve all original formatting (letters, numbers, formulas etc.)
-5. Always use German for technical terms
-
-Example formats:
-**Task 1**: C) 
-**Task 2**: 42.000 €
-**Task 3**: K_v = K_f + k_v * x
-**Task 4**: Die Break-even-Menge beträgt 15.000 Stück.
+1. Provide only the substantive answer
+2. Include a brief 1-sentence justification
+3. Use precise German technical terms
+4. Never show calculations/references
+5. Preserve the question's original answer format
 """
 
 # --- Bildverarbeitung ---
@@ -212,6 +203,9 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
             # Direkte Anzeige der Antwort
             st.markdown("### Lösungen:")
             st.markdown(response.content[0].text)
-            
+
         except Exception as e:
             st.error(f"Fehler: {str(e)}")
+            logger.error(f"Response Error: {str(e)}")
+
+# --- Ende des Codes ---
