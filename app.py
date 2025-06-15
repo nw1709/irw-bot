@@ -227,40 +227,29 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
             
             full_response = response.content[0].text
             
-            # Debug-Ausgabe (kann später entfernt werden)
-            st.write("### Vollständige Claude-Antwort (Debug):")
-            st.text(full_response)
+            # Verbessertes Parsing für Streamlit
+            task_blocks = re.split(r'(?=\*\*Task \[\d+\]\*\*)', full_response)
+            task_blocks = [block.strip() for block in task_blocks if block.strip()]
             
-            # Verbessertes Parsing mit Fehlerbehandlung
-            try:
-                # Extrahiere alle Tasks mit zugehörigen Details
-                task_blocks = re.split(r'(?=\*\*Task \[\d+\]\*\*)', full_response)
-                task_blocks = [block.strip() for block in task_blocks if block.strip()]
+            for block in task_blocks:
+                if not block.startswith("**Task"):
+                    continue
+                    
+                # Trenne Hauptantwort und Details
+                main_answer = block.split('<details>')[0].strip()
+                details_section = ''
                 
-                if not task_blocks:
-                    st.error("Keine Tasks im erwarteten Format gefunden.")
-                    st.markdown("### Rohantwort:")
-                    st.markdown(full_response)
-                else:
-                    for block in task_blocks:
-                        if not block.startswith("**Task"):
-                            continue
-                            
-                        # Trenne Hauptantwort und Details
-                        parts = re.split(r'(<details>.*?</details>)', block, flags=re.DOTALL)
-                        main_answer = parts[0].strip()
-                        
-                        st.markdown(main_answer)
-                        
-                        if len(parts) > 1:
-                            with st.expander("📚 Detailed Solution"):
-                                st.markdown(parts[1], unsafe_allow_html=True)
+                if '<details>' in block:
+                    details_section = block.split('<details>')[1].split('</details>')[0]
+                    details_section = f"<details>{details_section}</details>"
+                
+                # Zeige Hauptantwort an
+                st.markdown(main_answer)
+                
+                # Zeige Details-Sektion (falls vorhanden)
+                if details_section:
+                    st.markdown(details_section, unsafe_allow_html=True)
             
-            except Exception as e:
-                st.error(f"Fehler beim Parsen der Antwort: {str(e)}")
-                st.markdown("### Rohantwort:")
-                st.markdown(full_response)
-                
         except Exception as e:
-            st.error(f"API-Fehler: {str(e)}")
-            logger.error(f"API Error: {str(e)}")
+            st.error(f"Fehler bei der Antwortverarbeitung: {str(e)}")
+            logger.error(f"Response Processing Error: {str(e)}")
