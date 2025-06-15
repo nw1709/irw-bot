@@ -61,6 +61,47 @@ if drive_service and hasattr(st.session_state, 'drive_file_id'):
     except Exception:
         st.session_state.drive_knowledge = ""
 
+# --- Accounting Expert Prompt ---
+ACCOUNTING_PROMPT = """
+You are a highly qualified accounting expert with PhD-level knowledge of advanced university courses in accounting and finance. Your task is to answer questions in this domain precisely and without any error and according to the files and script from the course 'Internes Rechnungswesen' from the university Fernuniversiät Hagen.
+
+THEORETICAL SCOPE
+Use only the decision-oriented german managerial-accounting (Controlling) framework.
+Include, in particular:
+
+• Cost-type, cost-center and cost-unit accounting (Kostenarten-, Kostenstellen-, Kostenträgerrechnung)
+• Full, variable, marginal, standard (Plankosten-) and process/ABC costing systems
+• Flexible and Grenzplankostenrechnung variance analysis
+• Single- and multi-level contribution-margin accounting and break-even logic
+• Causality & allocation (Verursachungs- und Zurechnungsprinzip)
+• Business-economics MRS convention (MRS = MP₂ / MP₁ unless stated otherwise)
+• Activity-analysis production & logistics models (LP, Standort- & Transportprobleme, Supply-Chain-Planungsmatrix)
+• Marketing segmentation, price-elasticity, contribution-based pricing & mix planning
+
+Do not apply IFRS/GAAP valuation, classical micro-economic MRS, or any other external doctrines unless the task explicitly demands them.
+
+Follow these steps to answer the question:
+
+1. Read the question extremely carefully. Pay special attention to avoid any errors in visual interpretation.
+
+2. Repeat the question in your reasoning by writing it down exactly as it appears in the image. Use the provided OCR text:
+
+<OCR_TEXT>
+{{OCR_TEXT}}
+</OCR_TEXT>
+
+3. Analyse the question step by step in your mind. Think thoroughly before answering to ensure your response is correct.
+
+4. Formulate your answer. It should be short yet complete. It is crucial that your answer is CORRECT—there is no room for error.
+
+5. Check your answer once more for accuracy and completeness.
+
+Your final answer must have the following format:
+<answer>
+YOUR ANSWER HERE
+</answer>
+"""
+
 # --- Bild-Upload ---
 uploaded_file = st.file_uploader(
     "**Choose an exam paper image...**\n\nDrag and drop file here\nLimit 200MB per file - PNG, JPG, JPEG, WEBP, BMP",
@@ -85,19 +126,36 @@ if uploaded_file:
                     response = client.messages.create(
                         model="claude-3-opus-20240229",
                         max_tokens=4000,
-                        messages=[{
-                            "role": "user",
-                            "content": f"""
-                            Accounting-Frage:\n\n{extracted_text}\n\n
-                            Hintergrundwissen:\n\n{st.session_state.drive_knowledge}
-                            """
-                        }]
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": ACCOUNTING_PROMPT
+                            },
+                            {
+                                "role": "user",
+                                "content": f"""
+                                <OCR_TEXT>
+                                {extracted_text}
+                                </OCR_TEXT>
+                                
+                                Nutze falls verfügbar dieses Hintergrundwissen:
+                                {st.session_state.drive_knowledge}
+                                """
+                            }
+                        ]
                     )
+                    # Extrahiere die Antwort zwischen <answer> Tags
+                    answer_content = response.content[0].text
+                    if "<answer>" in answer_content:
+                        answer = answer_content.split("<answer>")[1].split("</answer>")[0].strip()
+                    else:
+                        answer = answer_content
+                    
                     st.markdown("### Antwort:")
-                    st.markdown(response.content[0].text)
+                    st.markdown(answer)
                     
             except Exception as e:
                 st.error("Analyse fehlgeschlagen. Bitte versuchen Sie es mit einem anderen Bild.")
-                
+    
     except Exception as e:
         st.error("Initialisierung fehlgeschlagen. Bitte kontaktieren Sie den Support.")
