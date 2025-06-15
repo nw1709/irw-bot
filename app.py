@@ -1,3 +1,4 @@
+import re  # Fügen Sie dies ganz oben bei den Imports hinzu
 import streamlit as st
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -212,49 +213,54 @@ except Exception as e:
 # --- Antwortverarbeitung ---
 if 'extracted_text' in locals() or 'extracted_text' in globals():
     if extracted_text:
-        client = Anthropic(api_key=st.secrets["claude_key"])
-        response = client.messages.create(
-            model="claude-3-opus-20240229",
-            messages=[{
-                "role": "user",
-                "content": f"{ACCOUNTING_PROMPT}\n\nDOCUMENT:\n{extracted_text}\n\nKNOWLEDGE:\n{st.session_state.get('drive_knowledge', '')}"
-            }],
-            temperature=0,
-            max_tokens=4000
-        )
-        
-        full_response = response.content[0].text
-        
-        # ROBUSTES PARSING FÜR TASKS
-        task_pattern = r"\*\*Task \[?\d*\]?.*?(?=\*\*Task \[?\d*\]?|$)"
-        tasks = re.findall(task_pattern, full_response, re.DOTALL)
-        
-        if not tasks:
-            st.warning("Claude hat das Antwortformat nicht eingehalten. Rohantwort:")
-            st.markdown(full_response)
-        else:
-            for task in tasks:
-                # Extrahiere Hauptantwort (vor <details>)
-                main_answer = []
-                details_section = []
-                in_details = False
+        try:
+            client = Anthropic(api_key=st.secrets["claude_key"])
+            response = client.messages.create(
+                model="claude-3-opus-20240229",
+                messages=[{
+                    "role": "user",
+                    "content": f"{ACCOUNTING_PROMPT}\n\nDOCUMENT:\n{extracted_text}\n\nKNOWLEDGE:\n{st.session_state.get('drive_knowledge', '')}"
+                }],
+                temperature=0,
+                max_tokens=4000
+            )
+            
+            full_response = response.content[0].text
+            
+            # Debug-Ausgabe (kann später entfernt werden)
+            st.write("### Vollständige Claude-Antwort (Debug):")
+            st.text(full_response)
+            
+            # Verbessertes Parsing mit Fehlerbehandlung
+            try:
+                # Extrahiere alle Tasks mit zugehörigen Details
+                task_blocks = re.split(r'(?=\*\*Task \[\d+\]\*\*)', full_response)
+                task_blocks = [block.strip() for block in task_blocks if block.strip()]
                 
-                for line in task.split('\n'):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    if '<details>' in line:
-                        in_details = True
-                    if not in_details:
-                        main_answer.append(line)
-                    else:
-                        details_section.append(line)
+                if not task_blocks:
+                    st.error("Keine Tasks im erwarteten Format gefunden.")
+                    st.markdown("### Rohantwort:")
+                    st.markdown(full_response)
+                else:
+                    for block in task_blocks:
+                        if not block.startswith("**Task"):
+                            continue
+                            
+                        # Trenne Hauptantwort und Details
+                        parts = re.split(r'(<details>.*?</details>)', block, flags=re.DOTALL)
+                        main_answer = parts[0].strip()
+                        
+                        st.markdown(main_answer)
+                        
+                        if len(parts) > 1:
+                            with st.expander("📚 Detailed Solution"):
+                                st.markdown(parts[1], unsafe_allow_html=True)
+            
+            except Exception as e:
+                st.error(f"Fehler beim Parsen der Antwort: {str(e)}")
+                st.markdown("### Rohantwort:")
+                st.markdown(full_response)
                 
-                # Zeige Hauptantwort an
-                st.markdown("\n".join(main_answer))
-                
-                # Zeige Details-Sektion (falls vorhanden)
-                if details_section:
-                    with st.expander("📚 Detailed Solution"):
-                        clean_details = "\n".join(details_section).replace('<details>', '').replace('</details>', '')
-                        st.markdown(clean_details, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"API-Fehler: {str(e)}")
+            logger.error(f"API Error: {str(e)}")
