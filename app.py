@@ -185,7 +185,7 @@ except Exception as e:
     st.error(f"Systemfehler: {str(e)}")
     logger.critical(f"System Error: {str(e)}")
 
-# --- Antwortverarbeitung (finale Version) ---
+# --- Antwortverarbeitung (simpleste Version) ---
 if 'extracted_text' in locals() or 'extracted_text' in globals():
     if extracted_text:
         try:
@@ -194,33 +194,13 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
                 model="claude-3-opus-20240229",
                 messages=[{
                     "role": "user",
-                    "content": f"""Antworte nur mit der direkten Lösung für jede Aufgabe im Format:
-                    
-                    TASK [X]: [Antwort]
-                    
-                    Füge nur EINE Begründung hinzu, maximal 1 Satz. 
-                    Gebe niemals identische Antworten mehrfach aus!"""
+                    "content": f"Antworte nur mit: 'TASK [Nr]: [Lösung]' + 1-Satz-Begründung. Keine Überschriften, keine Wiederholungen."
                 }],
-                temperature=0,
-                max_tokens=1000
+                temperature=0
             )
             
-            # Doppelte Antworten entfernen
-            seen_tasks = set()
-            final_answers = []
-            
-            for line in response.content[0].text.split('\n'):
-                if line.startswith('TASK'):
-                    task_id = line.split(':')[0]
-                    if task_id not in seen_tasks:
-                        seen_tasks.add(task_id)
-                        final_answers.append(line)
-                elif line.startswith('Begründung:'):
-                    if final_answers:  # Nur zur letzten Antwort hinzufügen
-                        final_answers.append(line)
-            
-            st.markdown("### Lösungen:")
-            st.markdown('\n\n'.join(final_answers))
+            # Einfachste Ausgabe OHNE Überschrift
+            st.markdown(response.content[0].text)
             
         except Exception as e:
             st.error(f"Fehler: {str(e)}")
