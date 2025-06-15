@@ -185,7 +185,7 @@ except Exception as e:
     st.error(f"Systemfehler: {str(e)}")
     logger.critical(f"System Error: {str(e)}")
 
-# --- Antwortverarbeitung (finale funktionierende Version) ---
+# --- Antwortverarbeitung (perfektionierte Version) ---
 if 'extracted_text' in locals() or 'extracted_text' in globals():
     if extracted_text:
         try:
@@ -194,18 +194,35 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
                 model="claude-3-opus-20240229",
                 messages=[{
                     "role": "user",
-                    "content": f"Antworte nur mit: 'TASK [Nr]: [Lösung]' + 1-Satz-Begründung. Keine Überschriften, keine Wiederholungen."
+                    "content": f"""Antworte genau im folgenden Format ohne zusätzlichen Text:
+                    
+                    Aufgabe [Nr]: [Lösung]
+                    Begründung: [1-Satz-Erklärung]
+                    
+                    • Keine Bestätigungen ('Verstanden...')
+                    • Keine Überschriften
+                    • Nur deutsche Begriffe
+                    • Keine Wiederholungen"""
                 }],
-                max_tokens=1000,  # WICHTIG: Dieser Parameter fehlte
+                max_tokens=800,
                 temperature=0
             )
             
-            # Entfernt alle Zeilen die mit "#" beginnen (Überschriften)
-            clean_response = "\n".join(
-                line for line in response.content[0].text.split('\n') 
-                if not line.strip().startswith('#')
-            )
-            st.markdown(clean_response)
+            # Filtert Bestätigungen und leere Zeilen heraus
+            clean_lines = [
+                line.replace("TASK", "Aufgabe")  # Englisch -> Deutsch
+                for line in response.content[0].text.split('\n')
+                if line.strip() and not any(
+                    phrase in line for phrase in [
+                        "Verstanden", 
+                        "I'll", 
+                        " format",
+                        "###"
+                    ]
+                )
+            ]
+            
+            st.markdown("\n".join(clean_lines))
             
         except Exception as e:
             st.error(f"Fehler: {str(e)}")
