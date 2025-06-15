@@ -223,19 +223,21 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
             max_tokens=4000
         )
         
-        # Intelligente Antwortverarbeitung
-        answer_content = response.content[0].text
+        # NUR den Teil nach "### OUTPUT FORMAT:" extrahieren
+        full_response = response.content[0].text
+        processed_response = full_response.split("### OUTPUT FORMAT:")[-1].strip()
         
         # Task-basierte Aufteilung
         task_blocks = []
         current_task = []
         
-        for line in answer_content.split('\n'):
+        for line in processed_response.split('\n'):
             if line.startswith('**Task'):
                 if current_task:
                     task_blocks.append('\n'.join(current_task))
                     current_task = []
             current_task.append(line)
+        
         if current_task:
             task_blocks.append('\n'.join(current_task))
         
@@ -263,6 +265,5 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
             if details_section:
                 details_content = '\n'.join(details_section)
                 with st.expander("📚 Detailed Solution"):
-                    # Entferne HTML-Tags falls vorhanden
                     clean_details = details_content.replace('<details>', '').replace('</details>', '')
                     st.markdown(clean_details, unsafe_allow_html=True)
