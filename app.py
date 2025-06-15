@@ -6,6 +6,11 @@ import google.generativeai as genai
 from anthropic import Anthropic
 import io
 import zipfile
+import logging
+
+# --- Logger Setup ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # --- UI-Einstellungen ---
 st.set_page_config(layout="centered")
@@ -41,11 +46,10 @@ if "gdrive_creds" in st.secrets:
                 
                 if zip_file.get('id'):
                     st.session_state.drive_file_id = zip_file['id']
-        except Exception:
-            pass  # Silent fail
-
-    except Exception:
-        pass  # Silent fail
+        except Exception as e:
+            logger.error(f"Drive-Suche fehlgeschlagen: {str(e)}")
+    except Exception as e:
+        logger.error(f"Drive-Verbindung fehlgeschlagen: {str(e)}")
 
 # --- Silent Wissen laden ---
 if drive_service and hasattr(st.session_state, 'drive_file_id'):
@@ -58,104 +62,96 @@ if drive_service and hasattr(st.session_state, 'drive_file_id'):
                 if file.endswith((".txt", ".pdf"))
             ])
         st.session_state.drive_knowledge = drive_knowledge
-    except Exception:
+    except Exception as e:
+        logger.error(f"Wissensladung fehlgeschlagen: {str(e)}")
         st.session_state.drive_knowledge = ""
 
 # --- Accounting Expert Prompt ---
 ACCOUNTING_PROMPT = """
-You are a highly qualified accounting expert with PhD-level knowledge of advanced university courses in accounting and finance. Your task is to answer questions in this domain precisely and without any error and according to the files and script from the course 'Internes Rechnungswesen' from the university Fernuniversiät Hagen.
-
-THEORETICAL SCOPE
-Use only the decision-oriented german managerial-accounting (Controlling) framework.
-Include, in particular:
-
-• Cost-type, cost-center and cost-unit accounting (Kostenarten-, Kostenstellen-, Kostenträgerrechnung)
-• Full, variable, marginal, standard (Plankosten-) and process/ABC costing systems
-• Flexible and Grenzplankostenrechnung variance analysis
-• Single- and multi-level contribution-margin accounting and break-even logic
-• Causality & allocation (Verursachungs- und Zurechnungsprinzip)
-• Business-economics MRS convention (MRS = MP₂ / MP₁ unless stated otherwise)
-• Activity-analysis production & logistics models (LP, Standort- & Transportprobleme, Supply-Chain-Planungsmatrix)
-• Marketing segmentation, price-elasticity, contribution-based pricing & mix planning
-
-Do not apply IFRS/GAAP valuation, classical micro-economic MRS, or any other external doctrines unless the task explicitly demands them.
-
-Follow these steps to answer the question:
-
-1. Read the question extremely carefully. Pay special attention to avoid any errors in visual interpretation.
-
-2. Repeat the question in your reasoning by writing it down exactly as it appears in the image. Use the provided OCR text:
-
-<OCR_TEXT>
-{{OCR_TEXT}}
-</OCR_TEXT>
-
-3. Analyse the question step by step in your mind. Think thoroughly before answering to ensure your response is correct.
-
-4. Formulate your answer. It should be short yet complete. It is crucial that your answer is CORRECT—there is no room for error.
-
-5. Check your answer once more for accuracy and completeness.
-
-Your final answer must have the following format:
-<answer>
-YOUR ANSWER HERE
-</answer>
+You are a highly qualified accounting expert with PhD-level knowledge [...] 
+[Ihr vollständiger Prompt hier]
 """
 
-# --- Bild-Upload ---
+# --- Bild-Upload und Verarbeitung ---
 uploaded_file = st.file_uploader(
     "**Choose an exam paper image...**\n\nDrag and drop file here\nLimit 200MB per file - PNG, JPG, JPEG, WEBP, BMP",
     type=["png", "jpg", "jpeg", "webp", "bmp"]
 )
 
 if uploaded_file:
-    # --- OCR mit Gemini ---
     try:
-        genai.configure(api_key=st.secrets["gemini_key"])
-        model = genai.GenerativeModel("gemini-pro-vision")
-        image = Image.open(uploaded_file)
+        # 1. Dateivalidierung
+        try:
+            image = Image.open(uploaded_file)
+            image.verify()  # Prüft Bildintegrität
+            image = Image.open(uploaded_file)  # Neu öffnen nach verify()
+            st.image(image, caption="Hochgeladenes Bild", width=300)
+        except Exception as e:
+            raise ValueError(f"Ungültiges Bildformat: {str(e)}")
+
+        # 2. Gemini OCR Initialisierung
+        if "gemini_key" not in st.secrets:
+            raise ValueError("Gemini API Key fehlt in den Secrets")
         
-        with st.spinner("Analysiere Dokument..."):
-            try:
-                response = model.generate_content(["Extrahier den Text aus diesem Bild.", image])
-                extracted_text = response.text
+        genai.configure(api_key=st.secrets["gemini_key"])
+        model = genai.GenerativeModel(
+            "gemini-pro-vision",
+            generation_config={"temperature": 0.1}
+        )
+        
+        # 3. OCR-Verarbeitung
+        with st.spinner("Analysiere Prüfungsdokument..."):
+            response = model.generate_content(
+                ["Extrahieren Sie den Text präzise aus diesem Prüfungsdokument:", image]
+            )
+            extracted_text = response.text
+        
+        # 4. Claude Initialisierung
+        if "claude_key" not in st.secrets:
+            raise ValueError("Claude API Key fehlt in den Secrets")
+        
+        client = Anthropic(api_key=st.secrets["claude_key"])
+        
+        # 5. Experten-Antwort generieren
+        if extracted_text:
+            with st.spinner("Erstelle Experten-Antwort..."):
+                response = client.messages.create(
+                    model="claude-3-opus-20240229",
+                    max_tokens=4000,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": ACCOUNTING_PROMPT
+                        },
+                        {
+                            "role": "user",
+                            "content": f"""
+                            <OCR_TEXT>
+                            {extracted_text}
+                            </OCR_TEXT>
+                            
+                            Nutze falls verfügbar dieses Hintergrundwissen:
+                            {st.session_state.get('drive_knowledge', '')}
+                            """
+                        }
+                    ]
+                )
                 
-                # --- Antwort mit Claude ---
-                if extracted_text and hasattr(st.session_state, 'drive_knowledge'):
-                    client = Anthropic(api_key=st.secrets["claude_key"])
-                    response = client.messages.create(
-                        model="claude-3-opus-20240229",
-                        max_tokens=4000,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": ACCOUNTING_PROMPT
-                            },
-                            {
-                                "role": "user",
-                                "content": f"""
-                                <OCR_TEXT>
-                                {extracted_text}
-                                </OCR_TEXT>
-                                
-                                Nutze falls verfügbar dieses Hintergrundwissen:
-                                {st.session_state.drive_knowledge}
-                                """
-                            }
-                        ]
-                    )
-                    # Extrahiere die Antwort zwischen <answer> Tags
-                    answer_content = response.content[0].text
-                    if "<answer>" in answer_content:
-                        answer = answer_content.split("<answer>")[1].split("</answer>")[0].strip()
-                    else:
-                        answer = answer_content
-                    
-                    st.markdown("### Antwort:")
-                    st.markdown(answer)
-                    
-            except Exception as e:
-                st.error("Analyse fehlgeschlagen. Bitte versuchen Sie es mit einem anderen Bild.")
+                # Antwortformatierung
+                answer_content = response.content[0].text
+                answer = (answer_content.split("<answer>")[1].split("</answer>")[0].strip() 
+                         if "<answer>" in answer_content else answer_content)
+                
+                st.markdown("### Experten-Antwort:")
+                st.markdown(answer)
     
     except Exception as e:
-        st.error("Initialisierung fehlgeschlagen. Bitte kontaktieren Sie den Support.")
+        logger.error(f"Verarbeitungsfehler: {str(e)}", exc_info=True)
+        st.error(f"Fehler: {str(e)}")
+        
+        # Technische Details für Support
+        with st.expander("Technische Details (für Support)"):
+            st.text(f"Fehlertyp: {type(e).__name__}")
+            st.text(f"Fehlermeldung: {str(e)}")
+            if hasattr(e, 'response'):
+                st.json(e.response.text if e.response else "Keine Response-Daten")
