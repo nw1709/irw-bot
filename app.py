@@ -185,7 +185,7 @@ except Exception as e:
     st.error(f"Systemfehler: {str(e)}")
     logger.critical(f"System Error: {str(e)}")
 
-# --- Antwortverarbeitung (vereinfacht) ---
+# --- Antwortverarbeitung (finale Version) ---
 if 'extracted_text' in locals() or 'extracted_text' in globals():
     if extracted_text:
         try:
@@ -194,18 +194,33 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
                 model="claude-3-opus-20240229",
                 messages=[{
                     "role": "user",
-                    "content": f"{ACCOUNTING_PROMPT}\n\nDOCUMENT:\n{extracted_text}\n\nKNOWLEDGE:\n{st.session_state.get('drive_knowledge', '')}"
+                    "content": f"""Antworte nur mit der direkten Lösung für jede Aufgabe im Format:
+                    
+                    TASK [X]: [Antwort]
+                    
+                    Füge nur EINE Begründung hinzu, maximal 1 Satz. 
+                    Gebe niemals identische Antworten mehrfach aus!"""
                 }],
                 temperature=0,
-                max_tokens=4000
+                max_tokens=1000
             )
             
-            # Direkte Anzeige der Antwort
+            # Doppelte Antworten entfernen
+            seen_tasks = set()
+            final_answers = []
+            
+            for line in response.content[0].text.split('\n'):
+                if line.startswith('TASK'):
+                    task_id = line.split(':')[0]
+                    if task_id not in seen_tasks:
+                        seen_tasks.add(task_id)
+                        final_answers.append(line)
+                elif line.startswith('Begründung:'):
+                    if final_answers:  # Nur zur letzten Antwort hinzufügen
+                        final_answers.append(line)
+            
             st.markdown("### Lösungen:")
-            st.markdown(response.content[0].text)
-
+            st.markdown('\n\n'.join(final_answers))
+            
         except Exception as e:
             st.error(f"Fehler: {str(e)}")
-            logger.error(f"Response Error: {str(e)}")
-
-# --- Ende des Codes ---
