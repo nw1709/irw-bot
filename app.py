@@ -89,9 +89,43 @@ if drive_service and hasattr(st.session_state, 'drive_file_id'):
 genai.configure(api_key=st.secrets["gemini_key"])
 vision_model = genai.GenerativeModel("gemini-1.5-flash")
 
-# --- Accounting Expert Prompt ---
-ACCOUNTING_PROMPT = """
-You are a highly qualified accounting expert with PhD-level knowledge of advanced university courses in accounting and finance. Your task is to answer questions in this domain precisely and without error.
+# --- Bildverarbeitung ---
+uploaded_file = st.file_uploader(
+    "**Choose an exam paper image...**\n\nDrag and drop file here\nLimit 200MB per file - PNG, JPG, JPEG, WEBP, BMP",
+    type=["png", "jpg", "jpeg", "webp", "bmp"]
+)
+
+if uploaded_file:
+    try:
+        # Bildvalidierung
+        image = Image.open(uploaded_file)
+        image.verify()
+        image = Image.open(uploaded_file)
+        st.image(image, caption="Hochgeladenes Bild", width=300)
+        
+        # OCR mit Gemini 1.5 Flash
+        with st.spinner("Analysiere Prüfungsdokument..."):
+            response = vision_model.generate_content(
+                [
+                    "Extrahieren Sie den Text präzise aus diesem Prüfungsdokument. Fokussiere auf:",
+                    "1. Zahlen und Rechnungen",
+                    "2. Fachbegriffe (Kostenrechnung, Controlling)",
+                    "3. Aufgabenstellungen mit (A), (B), (C) Optionen",
+                    image
+                ],
+                generation_config={
+                    "temperature": 0.1,
+                    "max_output_tokens": 2000
+                }
+            )
+            extracted_text = response.text
+        
+        # Claude Antwort (korrigierte Version ohne system role)
+        if extracted_text:
+            client = Anthropic(api_key=st.secrets["claude_key"])
+            
+            # Accounting Prompt als erste User-Nachricht
+            accounting_prompt = """You are a highly qualified accounting expert with PhD-level knowledge of advanced university courses in accounting and finance. Your task is to answer questions in this domain precisely and without error.
 
 THEORETICAL SCOPE
 Use only the decision-oriented German managerial-accounting (Controlling) framework.
@@ -127,54 +161,17 @@ Follow these steps to answer the question:
 Your final answer must have the following format:
 <answer>
 YOUR ANSWER HERE
-</answer>
-"""
-
-# --- Bildverarbeitung ---
-uploaded_file = st.file_uploader(
-    "**Choose an exam paper image...**\n\nDrag and drop file here\nLimit 200MB per file - PNG, JPG, JPEG, WEBP, BMP",
-    type=["png", "jpg", "jpeg", "webp", "bmp"]
-)
-
-if uploaded_file:
-    try:
-        # Bildvalidierung
-        image = Image.open(uploaded_file)
-        image.verify()
-        image = Image.open(uploaded_file)  # Neu öffnen nach verify()
-        st.image(image, caption="Hochgeladenes Bild", width=300)
-        
-        # OCR mit Gemini 1.5 Flash
-        with st.spinner("Analysiere Prüfungsdokument..."):
-            response = vision_model.generate_content(
-                [
-                    "Extrahieren Sie den Text präzise aus diesem Prüfungsdokument. Fokussiere auf:",
-                    "1. Zahlen und Rechnungen",
-                    "2. Fachbegriffe (Kostenrechnung, Controlling)",
-                    "3. Aufgabenstellungen mit (A), (B), (C) Optionen",
-                    image
-                ],
-                generation_config={
-                    "temperature": 0.1,
-                    "max_output_tokens": 2000
-                }
-            )
-            extracted_text = response.text
-        
-        # Claude Antwort
-        if extracted_text:
-            client = Anthropic(api_key=st.secrets["claude_key"])
+</answer>"""
+            
             response = client.messages.create(
                 model="claude-3-opus-20240229",
                 max_tokens=4000,
                 messages=[
                     {
-                        "role": "system",
-                        "content": ACCOUNTING_PROMPT
-                    },
-                    {
                         "role": "user",
                         "content": f"""
+                        {accounting_prompt}
+                        
                         <OCR_TEXT>
                         {extracted_text}
                         </OCR_TEXT>
