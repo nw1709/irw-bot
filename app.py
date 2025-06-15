@@ -141,64 +141,6 @@ Provide answers in EXACTLY this format:
 5. For open-ended questions: Provide 1-sentence summary first
 """
 
-# --- Antwortverarbeitung ---
-if extracted_text:
-    client = Anthropic(api_key=st.secrets["claude_key"])
-    response = client.messages.create(
-        model="claude-3-opus-20240229",
-        messages=[{
-            "role": "user",
-            "content": f"{ACCOUNTING_PROMPT}\n\nDOCUMENT:\n{extracted_text}\n\nKNOWLEDGE:\n{st.session_state.get('drive_knowledge', '')}"
-        }],
-        temperature=0,
-        max_tokens=4000
-    )
-    
-    # Intelligente Antwortverarbeitung
-    answer_content = response.content[0].text
-    
-    # Task-basierte Aufteilung
-    task_blocks = []
-    current_task = []
-    
-    for line in answer_content.split('\n'):
-        if line.startswith('**Task'):
-            if current_task:
-                task_blocks.append('\n'.join(current_task))
-                current_task = []
-        current_task.append(line)
-    if current_task:
-        task_blocks.append('\n'.join(current_task))
-    
-    # Anzeige mit Expander
-    for block in task_blocks:
-        if not block.strip():
-            continue
-            
-        # Extrahiere Hauptantwort (erste Zeilen vor details-Tag)
-        main_answer = []
-        details_section = []
-        in_details = False
-        
-        for line in block.split('\n'):
-            if '<details>' in line:
-                in_details = True
-            if not in_details and line.strip():
-                main_answer.append(line)
-            else:
-                details_section.append(line)
-                
-        st.markdown('\n'.join(main_answer))
-        
-        # Details-Section mit verbessertem Parsing
-        if details_section:
-            details_content = '\n'.join(details_section)
-            with st.expander("📚 Detailed Solution"):
-                # Entferne HTML-Tags falls vorhanden
-                clean_details = details_content.replace('<details>', '').replace('</details>', '')
-                st.markdown(clean_details, unsafe_allow_html=True)
-"""
-
 # --- Bildverarbeitung ---
 try:
     uploaded_file = st.file_uploader(
@@ -231,33 +173,33 @@ try:
                 )
                 extracted_text = response.text
 
-# --- Claude Analyse ---
-if extracted_text:
-    client = Anthropic(api_key=st.secrets["claude_key"])
-    response = client.messages.create(
-        model="claude-3-opus-20240229",
-        max_tokens=4000,
-        messages=[{
-            "role": "user",
-            "content": f"""
-            {ACCOUNTING_PROMPT}
-            
-            <EXAM_DOCUMENT>
-            {extracted_text}
-            </EXAM_DOCUMENT>
-            
-            <KNOWLEDGE_BASE>
-            {st.session_state.get('drive_knowledge', '')}
-            </KNOWLEDGE_BASE>
-            """
-        }],
-        temperature=0
-    )
+            # --- Claude Analyse ---
+            if extracted_text:
+                client = Anthropic(api_key=st.secrets["claude_key"])
+                response = client.messages.create(
+                    model="claude-3-opus-20240229",
+                    max_tokens=4000,
+                    messages=[{
+                        "role": "user",
+                        "content": f"""
+                        {ACCOUNTING_PROMPT}
+                        
+                        <EXAM_DOCUMENT>
+                        {extracted_text}
+                        </EXAM_DOCUMENT>
+                        
+                        <KNOWLEDGE_BASE>
+                        {st.session_state.get('drive_knowledge', '')}
+                        </KNOWLEDGE_BASE>
+                        """
+                    }],
+                    temperature=0
+                )
 
-    # Antwortformatierung
-    answer_content = response.content[0].text
-    st.markdown("### Lösungen:")
-    st.markdown(answer_content)
+                # Antwortformatierung
+                answer_content = response.content[0].text
+                st.markdown("### Lösungen:")
+                st.markdown(answer_content)
 
         except Exception as e:
             st.error(f"Verarbeitungsfehler: {str(e)}")
@@ -266,3 +208,61 @@ if extracted_text:
 except Exception as e:
     st.error(f"Systemfehler: {str(e)}")
     logger.critical(f"System Error: {str(e)}")
+
+# --- Antwortverarbeitung ---
+if 'extracted_text' in locals() or 'extracted_text' in globals():
+    if extracted_text:
+        client = Anthropic(api_key=st.secrets["claude_key"])
+        response = client.messages.create(
+            model="claude-3-opus-20240229",
+            messages=[{
+                "role": "user",
+                "content": f"{ACCOUNTING_PROMPT}\n\nDOCUMENT:\n{extracted_text}\n\nKNOWLEDGE:\n{st.session_state.get('drive_knowledge', '')}"
+            }],
+            temperature=0,
+            max_tokens=4000
+        )
+        
+        # Intelligente Antwortverarbeitung
+        answer_content = response.content[0].text
+        
+        # Task-basierte Aufteilung
+        task_blocks = []
+        current_task = []
+        
+        for line in answer_content.split('\n'):
+            if line.startswith('**Task'):
+                if current_task:
+                    task_blocks.append('\n'.join(current_task))
+                    current_task = []
+            current_task.append(line)
+        if current_task:
+            task_blocks.append('\n'.join(current_task))
+        
+        # Anzeige mit Expander
+        for block in task_blocks:
+            if not block.strip():
+                continue
+                
+            # Extrahiere Hauptantwort (erste Zeilen vor details-Tag)
+            main_answer = []
+            details_section = []
+            in_details = False
+            
+            for line in block.split('\n'):
+                if '<details>' in line:
+                    in_details = True
+                if not in_details and line.strip():
+                    main_answer.append(line)
+                else:
+                    details_section.append(line)
+                    
+            st.markdown('\n'.join(main_answer))
+            
+            # Details-Section mit verbessertem Parsing
+            if details_section:
+                details_content = '\n'.join(details_section)
+                with st.expander("📚 Detailed Solution"):
+                    # Entferne HTML-Tags falls vorhanden
+                    clean_details = details_content.replace('<details>', '').replace('</details>', '')
+                    st.markdown(clean_details, unsafe_allow_html=True)
