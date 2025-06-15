@@ -8,6 +8,19 @@ import io
 import zipfile
 import logging
 
+# Key-Validierungstest +++
+from anthropic import Anthropic
+
+def test_claude_key(api_key):
+    try:
+        client = Anthropic(api_key=api_key)
+        models = client.models.list()
+        available_models = [model.id for model in models]
+        st.session_state.claude_models = available_models  # Für spätere Nutzung speichern
+        return True, available_models
+    except Exception as e:
+        return False, str(e)
+        
 # --- Logger Setup ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,19 +39,34 @@ def validate_keys():
             missing.append(name)
         elif not st.secrets[key].startswith(prefix):
             invalid.append(name)
-    
+
+    # +++ NEU: Claude Key Live-Test +++
+    if "claude_key" in st.secrets and not invalid:
+        is_valid, models_or_error = test_claude_key(st.secrets["claude_key"])
+        if not is_valid:
+            invalid.append(f"Claude (API Fehler: {models_or_error}")
+        elif "claude-3-opus-20240229" not in models_or_error:
+            invalid.append("Claude 3 Opus nicht verfügbar")
+
     if missing:
         st.error(f"Fehlende API Keys: {', '.join(missing)}")
     if invalid:
-        st.error(f"Ungültige API Keys: {', '.join(invalid)} (sollten mit {prefix} beginnen)")
+        st.error(f"Probleme mit: {', '.join(invalid)}")
+        with st.expander("Details zur Claude-Key-Überprüfung"):
+            if "claude_models" in st.session_state:
+                st.write("Verfügbare Modelle:", st.session_state.claude_models)
+            else:
+                st.write("Keine Modelldaten verfügbar")
     if missing or invalid:
         st.stop()
-
-validate_keys()
 
 # --- UI-Einstellungen ---
 st.set_page_config(layout="centered")
 st.title("🦊 Koifox-Bot")
+
+# +++ Key-Validierung mit Live-Test +++
+validate_keys()  # Enthält jetzt den Claude-Test
+
 st.markdown("""
     *This application uses Google's Gemini for OCR and Anthropic's Claude for answering advanced accounting questions.*  
     *Made with coffee, deep minimal and tiny gummy bears*  
