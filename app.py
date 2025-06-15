@@ -185,7 +185,7 @@ except Exception as e:
     st.error(f"Systemfehler: {str(e)}")
     logger.critical(f"System Error: {str(e)}")
 
-# --- Antwortverarbeitung (simpleste Version) ---
+# --- Antwortverarbeitung (finale funktionierende Version) ---
 if 'extracted_text' in locals() or 'extracted_text' in globals():
     if extracted_text:
         try:
@@ -196,11 +196,16 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
                     "role": "user",
                     "content": f"Antworte nur mit: 'TASK [Nr]: [Lösung]' + 1-Satz-Begründung. Keine Überschriften, keine Wiederholungen."
                 }],
+                max_tokens=1000,  # WICHTIG: Dieser Parameter fehlte
                 temperature=0
             )
             
-            # Einfachste Ausgabe OHNE Überschrift
-            st.markdown(response.content[0].text)
+            # Entfernt alle Zeilen die mit "#" beginnen (Überschriften)
+            clean_response = "\n".join(
+                line for line in response.content[0].text.split('\n') 
+                if not line.strip().startswith('#')
+            )
+            st.markdown(clean_response)
             
         except Exception as e:
             st.error(f"Fehler: {str(e)}")
