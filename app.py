@@ -223,47 +223,38 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
             max_tokens=4000
         )
         
-        # NUR den Teil nach "### OUTPUT FORMAT:" extrahieren
         full_response = response.content[0].text
-        processed_response = full_response.split("### OUTPUT FORMAT:")[-1].strip()
         
-        # Task-basierte Aufteilung
-        task_blocks = []
-        current_task = []
+        # ROBUSTES PARSING FÜR TASKS
+        task_pattern = r"\*\*Task \[?\d*\]?.*?(?=\*\*Task \[?\d*\]?|$)"
+        tasks = re.findall(task_pattern, full_response, re.DOTALL)
         
-        for line in processed_response.split('\n'):
-            if line.startswith('**Task'):
-                if current_task:
-                    task_blocks.append('\n'.join(current_task))
-                    current_task = []
-            current_task.append(line)
-        
-        if current_task:
-            task_blocks.append('\n'.join(current_task))
-        
-        # Anzeige mit Expander
-        for block in task_blocks:
-            if not block.strip():
-                continue
+        if not tasks:
+            st.warning("Claude hat das Antwortformat nicht eingehalten. Rohantwort:")
+            st.markdown(full_response)
+        else:
+            for task in tasks:
+                # Extrahiere Hauptantwort (vor <details>)
+                main_answer = []
+                details_section = []
+                in_details = False
                 
-            # Extrahiere Hauptantwort (erste Zeilen vor details-Tag)
-            main_answer = []
-            details_section = []
-            in_details = False
-            
-            for line in block.split('\n'):
-                if '<details>' in line:
-                    in_details = True
-                if not in_details and line.strip():
-                    main_answer.append(line)
-                else:
-                    details_section.append(line)
-                    
-            st.markdown('\n'.join(main_answer))
-            
-            # Details-Section mit verbessertem Parsing
-            if details_section:
-                details_content = '\n'.join(details_section)
-                with st.expander("📚 Detailed Solution"):
-                    clean_details = details_content.replace('<details>', '').replace('</details>', '')
-                    st.markdown(clean_details, unsafe_allow_html=True)
+                for line in task.split('\n'):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if '<details>' in line:
+                        in_details = True
+                    if not in_details:
+                        main_answer.append(line)
+                    else:
+                        details_section.append(line)
+                
+                # Zeige Hauptantwort an
+                st.markdown("\n".join(main_answer))
+                
+                # Zeige Details-Sektion (falls vorhanden)
+                if details_section:
+                    with st.expander("📚 Detailed Solution"):
+                        clean_details = "\n".join(details_section).replace('<details>', '').replace('</details>', '')
+                        st.markdown(clean_details, unsafe_allow_html=True)
