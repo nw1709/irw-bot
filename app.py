@@ -231,33 +231,33 @@ try:
                 )
                 extracted_text = response.text
 
-            # Claude Analyse
-            if extracted_text:
-                client = Anthropic(api_key=st.secrets["claude_key"])
-                response = client.messages.create(
-                    model="claude-3-opus-20240229",
-                    max_tokens=4000,
-                    messages=[{
-                        "role": "user",
-                        "content": f"""
-                        {ACCOUNTING_PROMPT}
-                        
-                        <EXAM_DOCUMENT>
-                        {extracted_text}
-                        </EXAM_DOCUMENT>
-                        
-                        <KNOWLEDGE_BASE>
-                        {st.session_state.get('drive_knowledge', '')}
-                        </KNOWLEDGE_BASE>
-                        """
-                    }],
-                    temperature=0
-                )
-                
-                # Antwortformatierung
-                answer_content = response.content[0].text
-                st.markdown("### Lösungen:")
-                st.markdown(answer_content)
+# --- Claude Analyse ---
+if extracted_text:
+    client = Anthropic(api_key=st.secrets["claude_key"])
+    response = client.messages.create(
+        model="claude-3-opus-20240229",
+        max_tokens=4000,
+        messages=[{
+            "role": "user",
+            "content": f"""
+            {ACCOUNTING_PROMPT}
+            
+            <EXAM_DOCUMENT>
+            {extracted_text}
+            </EXAM_DOCUMENT>
+            
+            <KNOWLEDGE_BASE>
+            {st.session_state.get('drive_knowledge', '')}
+            </KNOWLEDGE_BASE>
+            """
+        }],
+        temperature=0
+    )
+
+    # Antwortformatierung
+    answer_content = response.content[0].text
+    st.markdown("### Lösungen:")
+    st.markdown(answer_content)
 
         except Exception as e:
             st.error(f"Verarbeitungsfehler: {str(e)}")
