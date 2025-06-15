@@ -108,38 +108,22 @@ Read the question extremely carefully. Pay special attention to avoid any errors
 Analyse the question step by step in your mind. Think thoroughly before answering to ensure your response is correct.
 It is crucial that your answer is CORRECT—there is no room for error.
 
-Provide answers in EXACTLY this format:
+Provide ONLY the direct answer to each task in this exact format:
 
-### OUTPUT FORMAT:
-**Task [X]**  
-[Complete answer as required by the task]  
+**Task [X]**: [Complete answer as required by the task]
 
-<details>
-<summary>🔍 Detailed Solution (Click to expand)</summary>
+Rules:
+1. Give ONLY what the task requires - no explanations, calculations or references
+2. Use the exact same answer format as requested in the question
+3. For open-ended questions: provide a concise 1-sentence answer
+4. Preserve all original formatting (letters, numbers, formulas etc.)
+5. Always use German for technical terms
 
-**Question:**  
-[Full question text]  
-
-**Script Reference:**  
-[Exact script location, e.g., "Controlling Skript S.72"]  
-
-**Methodology:**  
-[Explanation of used method]  
-
-**Step-by-Step:**  
-1. Step 1...
-2. Step 2... 
-
-**Verification:**  
-[Cross-check with knowledge base]  
-</details>
-
-### STRICT RULES:
-1. PRIMARY ANSWER: Show ONLY what the task requires first
-2. Put ALL explanations, calculations and references in details section
-3. Use German for technical terms
-4. Preserve original question formatting
-5. For open-ended questions: Provide 1-sentence summary first
+Example formats:
+**Task 1**: C) 
+**Task 2**: 42.000 €
+**Task 3**: K_v = K_f + k_v * x
+**Task 4**: Die Break-even-Menge beträgt 15.000 Stück.
 """
 
 # --- Bildverarbeitung ---
@@ -210,7 +194,7 @@ except Exception as e:
     st.error(f"Systemfehler: {str(e)}")
     logger.critical(f"System Error: {str(e)}")
 
-# --- Antwortverarbeitung ---
+# --- Antwortverarbeitung (vereinfacht) ---
 if 'extracted_text' in locals() or 'extracted_text' in globals():
     if extracted_text:
         try:
@@ -225,31 +209,9 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
                 max_tokens=4000
             )
             
-            full_response = response.content[0].text
-            
-            # Verbessertes Parsing für Streamlit
-            task_blocks = re.split(r'(?=\*\*Task \[\d+\]\*\*)', full_response)
-            task_blocks = [block.strip() for block in task_blocks if block.strip()]
-            
-            for block in task_blocks:
-                if not block.startswith("**Task"):
-                    continue
-                    
-                # Trenne Hauptantwort und Details
-                main_answer = block.split('<details>')[0].strip()
-                details_section = ''
-                
-                if '<details>' in block:
-                    details_section = block.split('<details>')[1].split('</details>')[0]
-                    details_section = f"<details>{details_section}</details>"
-                
-                # Zeige Hauptantwort an
-                st.markdown(main_answer)
-                
-                # Zeige Details-Sektion (falls vorhanden)
-                if details_section:
-                    st.markdown(details_section, unsafe_allow_html=True)
+            # Direkte Anzeige der Antwort
+            st.markdown("### Lösungen:")
+            st.markdown(response.content[0].text)
             
         except Exception as e:
-            st.error(f"Fehler bei der Antwortverarbeitung: {str(e)}")
-            logger.error(f"Response Processing Error: {str(e)}")
+            st.error(f"Fehler: {str(e)}")
