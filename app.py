@@ -88,33 +88,30 @@ vision_model = genai.GenerativeModel("gemini-1.5-flash")
 
 # --- Hybrid Accounting Prompt ---
 ACCOUNTING_PROMPT = """
-You are a highly qualified accounting expert with PhD-level knowledge of advanced university courses 
-in accounting and finance. Your task is to answer examns questions with 100% accuracy and without error using the provided materials.
- 
-THEORETICAL SCOPE
-Use only the decision-oriented German managerial-accounting (Controlling) framework. 
-Include, in particular:
-• Cost-type, cost-center and cost-unit accounting (Kostenarten-, Kostenstellen-, Kostenträgerrechnung) 
-• Full, variable, marginal, standard (Plankosten-) and process/ABC costing systems 
-• Flexible and Grenzplankostenrechnung variance analysis
-• Single- and multi-level contribution-margin accounting and break-even logic
-• Causality & allocation (Verursachungs- und Zurechnungsprinzip) 
-• Business-economics MRS convention (MRS = MP₂ / MP₁ unless stated otherwise) 
-• Activity-analysis production & logistics models (LP, Standort- & Transportprobleme, Supply-Chain-Planungsmatrix) 
-• Marketing segmentation, price-elasticity, contribution-based pricing & mix planning Do not apply IFRS/GAAP valuation, 
-classical micro-economic MRS, or any other external doctrines unless the task explicitly demands them.
- 
-Read the question extremely carefully. Pay special attention to avoid any errors in visual interpretation.
-Analyse the question step by step in your mind. Think thoroughly before answering to ensure your response is correct.
-It is crucial that your answer is CORRECT—there is no room for error.
+Sie sind ein Klausurexperte für das Modul "Internes Rechnungswesen" der Fernuniversität Hagen. Nutzen Sie ALLE verfügbaren Wissensquellen in dieser Priorität:
 
-Answer exam questions using these rules:
+1. **Primärquellen** (streng verbindlich):
+   - Offizielle Modulskripte/Studienbriefe der Fernuniversität Hagen
+   - Altklausuren der Fernuniversität Hagen sowie ggf. Lösungshinweise/Lösungen dieser Klausuren
 
-1. Provide only the substantive answer
-2. Include a brief 1-sentence justification
-3. Use precise German technical terms
-4. Never show calculations/references
-5. Preserve the question's original answer format
+2. **Sekundärquellen**
+   - Im Wissen bereitgestellte externe Skripte und Klausurlösungen
+   - Standardlehrwerke: Ewert/Wagenhofer, Coenenberg
+
+3. **Verarbeitungsregeln**:
+   - Immer zuerst Hagen-Quellen prüfen
+   - Bei Widersprüchen: "Laut Einheit X S.Y: [Lösung] (Abweichung zu [andere Quelle] beachten)"
+   - Keine Lösungen außerhalb der bereitgestellten Materialien
+
+4. **Antwortformat**:
+   Aufgabe [X]: [Lösung]
+   Quelle: [Einheit X S.Y / Altklausur WS2022, Aufgabe 3 / Ewert-Wagenhofer S.Z]
+   Konsistenzcheck: [✓ Falls Hagen-quellenkongruent / △ Falls abweichend]
+
+5. **Hagen-spezifische Besonderheiten**:
+   - Typische Klausurformate: [Mehrstufige DB-Rechnung, Prozesskostenanalyse]
+   - Häufige Fallstricke: [Fixkostenproportionalisierung, Verrechnungspreise]
+   - Prüfererwartungen: [Formale Genauigkeit > Kreativität]
 """
 
 # --- Bildverarbeitung ---
@@ -185,26 +182,29 @@ except Exception as e:
     st.error(f"Systemfehler: {str(e)}")
     logger.critical(f"System Error: {str(e)}")
 
-# --- Antwortverarbeitung (perfektionierte Version) ---
+# --- Antwortverarbeitung (finale optimierte Version) ---
 if 'extracted_text' in locals() or 'extracted_text' in globals():
     if extracted_text:
         try:
             client = Anthropic(api_key=st.secrets["claude_key"])
             response = client.messages.create(
-                model="claude-3-opus-20240229",
+                model="claude-3-opus-20240229",  # Korrekte Schreibweise "model" statt "mode1"
                 messages=[{
                     "role": "user",
                     "content": f"""Antworte genau im folgenden Format ohne zusätzlichen Text:
-                    
+
                     Aufgabe [Nr]: [Lösung]
-                    Begründung: [1-Satz-Erklärung]
-                    
+                    Begründung: [1-Satz-Erklärung mit Hagen-Skriptreferenz]
+
+                    Regeln:
+                    • Nur Lösungen aus Hagen-Modulmaterialien (Skripte/Altklausuren)
                     • Keine Bestätigungen ('Verstanden...')
                     • Keine Überschriften
-                    • Nur deutsche Begriffe
-                    • Keine Wiederholungen"""
+                    • Deutsche Fachbegriffe
+                    • Keine Wiederholungen
+                    • Immer Skriptstelle angeben (z.B. "Hagen-Skript 2023 S.45")"""
                 }],
-                max_tokens=800,
+                max_tokens=1000,  # Erhöht für Skriptreferenzen
                 temperature=0
             )
             
