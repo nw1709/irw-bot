@@ -27,7 +27,7 @@ st.markdown("""
     *Made with coffee, deep minimal and tiny gummy bears*  
 """)
 
-# --- Google Drive-Verbindung (nur für Kursmaterial) ---
+# --- Google Drive-Verbindung ---
 @st.cache_resource
 def load_knowledge_from_drive():
     knowledge_base = ""
@@ -38,7 +38,6 @@ def load_knowledge_from_drive():
         creds = service_account.Credentials.from_service_account_info(st.secrets["gdrive_creds"])
         drive_service = build("drive", "v3", credentials=creds)
         
-        # Ordner finden
         folder_response = drive_service.files().list(
             q="name='IRW_Bot_Gehirn' and mimeType='application/vnd.google-apps.folder'",
             pageSize=1,
@@ -49,7 +48,6 @@ def load_knowledge_from_drive():
         if not folder.get('id'):
             return knowledge_base
             
-        # ZIP-Datei finden
         zip_response = drive_service.files().list(
             q=f"'{folder['id']}' in parents and mimeType='application/zip'",
             pageSize=1,
@@ -60,7 +58,6 @@ def load_knowledge_from_drive():
         if not zip_file.get('id'):
             return knowledge_base
             
-        # ZIP herunterladen und entpacken
         downloaded = drive_service.files().get_media(fileId=zip_file['id']).execute()
         with zipfile.ZipFile(io.BytesIO(downloaded)) as zip_ref:
             for file_name in zip_ref.namelist():
@@ -78,7 +75,7 @@ def load_knowledge_from_drive():
         logger.error(f"Drive-Fehler: {str(e)}")
         return knowledge_base
 
-# --- Accounting Prompt ---
+# --- Vollständiger Accounting Prompt (IMMER verwenden) ---
 ACCOUNTING_PROMPT = """
 You are a highly qualified accounting expert with PhD-level knowledge of the university course "Internes Rechnungswesen (31031)" at Fernuniversität Hagen. 
 Your task is to answer exam questions regarding this course with 100% accuracy using the provided image.
@@ -94,41 +91,53 @@ Use only the decision-oriented German managerial-accounting (Controlling) framew
 • Activity-analysis production & logistics models (LP, Standort- & Transportprobleme)
 • Marketing segmentation, price-elasticity, contribution-based pricing & mix planning
 
-INSTRUCTIONS:
-1. Analyze the image carefully to identify all exam tasks
-2. For each task, provide:
-   - Aufgabe [Nr]: [Präzise Lösung]
-   - Begründung: [1-Satz-Erklärung auf Deutsch mit Fachbegriffen]
-3. Use the knowledge base below when relevant
-4. Be extremely precise with calculations
-5. Format answers clearly and consistently
+CRITICAL INSTRUCTIONS:
+1. Read the image VERY carefully - identify all tasks and their numbers
+2. Perform calculations step-by-step and VERIFY your answer
+3. For each task, provide EXACTLY this format:
 
-KNOWLEDGE BASE:
-{knowledge}
+Aufgabe [Nr]: [Finale Antwort]
+Begründung: [1-Satz-Erklärung auf Deutsch mit Fachbegriffen]
+
+4. Be extremely precise with calculations - double-check everything!
+5. Answer in German for explanations, use numbers/formulas as needed
+
+{knowledge_section}
 """
 
 # --- Hauptfunktion ---
-def process_exam_image(image, knowledge_base):
+def process_exam_image(image, use_knowledge_base=False):
     """Verarbeitet Klausurbild mit Claude 4 Opus Vision"""
     try:
-        # Bild für API vorbereiten
         buffered = io.BytesIO()
         
-        # Konvertiere zu RGB falls nötig (für RGBA/P-Modi)
+        # Bildoptimierung (Balance zwischen Qualität und Größe)
+        max_dimension = 1536
+        image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+        
         if image.mode in ('RGBA', 'P'):
             rgb_image = Image.new('RGB', image.size, (255, 255, 255))
             rgb_image.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
             image = rgb_image
-            
-        # Als PNG speichern (ohne Größenbeschränkung)
-        image.save(buffered, format="PNG", optimize=True)
+        
+        image.save(buffered, format="JPEG", quality=90)
         image_data = base64.b64encode(buffered.getvalue()).decode()
         
-        # Claude 4 Opus API-Aufruf
+        # Knowledge Base Section
+        knowledge_section = ""
+        if use_knowledge_base:
+            knowledge_base = load_knowledge_from_drive()
+            if knowledge_base:
+                # Nur relevanten Teil nehmen (erste 8000 Zeichen)
+                knowledge_section = f"\n\nKNOWLEDGE BASE (relevant excerpts):\n{knowledge_base[:8000]}"
+        
+        prompt = ACCOUNTING_PROMPT.format(knowledge_section=knowledge_section)
+        
+        # API-Aufruf
         client = Anthropic(api_key=st.secrets["claude_key"])
         response = client.messages.create(
             model="claude-4-opus-20250514",
-            max_tokens=4000,
+            max_tokens=1200,  # Etwas mehr für komplexe Aufgaben
             temperature=0,
             messages=[{
                 "role": "user",
@@ -137,13 +146,13 @@ def process_exam_image(image, knowledge_base):
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": "image/png",
+                            "media_type": "image/jpeg",
                             "data": image_data
                         }
                     },
                     {
                         "type": "text",
-                        "text": ACCOUNTING_PROMPT.format(knowledge=knowledge_base)
+                        "text": prompt
                     }
                 ]
             }]
@@ -155,7 +164,20 @@ def process_exam_image(image, knowledge_base):
         logger.error(f"Verarbeitungsfehler: {str(e)}")
         raise e
 
-# --- UI: Datei-Upload ---
+# --- UI ---
+# Checkbox für Knowledge Base
+col1, col2 = st.columns([3, 1])
+with col1:
+    use_knowledge = st.checkbox(
+        "Kursmaterial einbeziehen", 
+        value=False,
+        help="Aktivieren für komplexe Theoriefragen."
+    )
+with col2:
+    if use_knowledge:
+        st.warning("Höhere Kosten")
+
+# Datei-Upload
 uploaded_file = st.file_uploader(
     "**Klausuraufgabe hochladen...**",
     type=["png", "jpg", "jpeg"],
@@ -168,32 +190,35 @@ if uploaded_file is not None:
         image = Image.open(uploaded_file)
         st.image(image, caption="Hochgeladene Klausuraufgabe", use_container_width=True)
         
-        # Knowledge Base laden (gecached)
-        with st.spinner("Lade Kursmaterial..."):
-            knowledge_base = load_knowledge_from_drive()
-            
         # Aufgabe analysieren
-        with st.spinner("Analysiere Aufgaben mit Claude 4 Opus..."):
-            result = process_exam_image(image, knowledge_base)
+        with st.spinner("Analysiere Aufgabe..."):
+            result = process_exam_image(image, use_knowledge)
         
         # Ergebnisse anzeigen
         st.markdown("---")
         st.markdown("### Lösungen:")
         
         # Formatierte Ausgabe
-        for line in result.split('\n'):
+        lines = result.split('\n')
+        for line in lines:
             if line.strip():
                 if line.startswith('Aufgabe'):
-                    st.markdown(f"**{line}**")
+                    # Aufgabe und Lösung hervorheben
+                    parts = line.split(':', 1)
+                    if len(parts) == 2:
+                        st.markdown(f"### {parts[0]}: **{parts[1].strip()}**")
+                    else:
+                        st.markdown(f"### {line}")
                 elif line.startswith('Begründung:'):
                     st.markdown(f"_{line}_")
                 else:
                     st.markdown(line)
                     
     except Exception as e:
-        st.error(f"❌ Fehler bei der Verarbeitung: {str(e)}")
-        st.info("Tipp: Stelle sicher, dass das Bild klar lesbar ist und die Datei nicht beschädigt ist.")
+        st.error(f"❌ Fehler: {str(e)}")
+        st.info("Stelle sicher, dass das Bild klar lesbar ist.")
 
 # --- Footer ---
 st.markdown("---")
 st.caption("Made by Fox & Powered by Claude 4 Opus Vision")
+```
