@@ -213,8 +213,6 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
             
             st.markdown("\n".join(clean_lines))
 
-         # Diagnose-Ausgabe
-            st.code(f"Verwendetes Modell: {response.model}")
             
         except Exception as e:
             st.error(f"Fehler: {str(e)}")
