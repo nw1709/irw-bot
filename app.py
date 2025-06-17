@@ -147,7 +147,7 @@ try:
             if extracted_text:
                 client = Anthropic(api_key=st.secrets["claude_key"])
                 response = client.messages.create(
-                    model="claude-4-opus-claude-opus-4-20250514",
+                    model="claude-opus-4-20250514",
                     max_tokens=4000,
                     messages=[{
                         "role": "user",
