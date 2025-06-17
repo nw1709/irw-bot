@@ -91,18 +91,14 @@ Use only the decision-oriented German managerial-accounting (Controlling) framew
 • Activity-analysis production & logistics models (LP, Standort- & Transportprobleme)
 • Marketing segmentation, price-elasticity, contribution-based pricing & mix planning
 
-CRITICAL INSTRUCTIONS:
-1. Read the image VERY carefully - identify all tasks and their numbers
-2. Perform calculations step-by-step and VERIFY your answer
-3. For each task, provide EXACTLY this format:
-
-Aufgabe [Nr]: [Finale Antwort]
-Begründung: [1-Satz-Erklärung auf Deutsch mit Fachbegriffen]
-
-4. Be extremely precise with calculations - double-check everything!
-5. Answer in German for explanations, use numbers/formulas as needed
-
-{knowledge_section}
+INSTRUCTIONS:
+1. Analyze the image carefully to identify all exam tasks
+2. For each task, provide:
+   - Aufgabe [Nr]: [Präzise Lösung]
+   - Begründung: [1-Satz-Erklärung auf Deutsch mit Fachbegriffen]
+3. Use the knowledge base below when relevant
+4. Be extremely precise with calculations
+5. Format answers clearly and consistently
 """
 
 # --- Hauptfunktion ---
