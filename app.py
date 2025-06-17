@@ -185,7 +185,7 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
         try:
             client = Anthropic(api_key=st.secrets["claude_key"])
             response = client.messages.create(
-                model="claude-4-opus",
+                model="claude-4-opus-20250514",
                 messages=[{
                     "role": "user",
                     "content": f"""Antworte genau im folgenden Format ohne zusätzlichen Text:
@@ -193,7 +193,7 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
                     Aufgabe [Nr]: [Lösung]
                     Begründung: [1-Satz-Erklärung]"""
                 }],
-                max_tokens=1000,  # Erhöht für Skriptreferenzen
+                max_tokens=1549,  # Erhöht für Skriptreferenzen
                 temperature=0
             )
             
