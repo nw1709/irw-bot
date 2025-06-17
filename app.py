@@ -96,20 +96,12 @@ Use only the decision-oriented German managerial-accounting (Controlling) framew
 
 INSTRUCTIONS:
 1. Analyze the image carefully to identify all exam tasks
-2. For each task, provide your answer in this EXACT format:
-
-ANTWORT: [Nur die Zahl/Lösung entsprechend der Aufgabenstellung ohne weitere Erklärung]
-BEGRÜNDUNG: [1-Satz-Erklärung auf Deutsch]
-LÖSUNG: [Kurzer Rechenweg mit den wichtigsten Schritten]
-
-Example:
-ANTWORT: -16
-BEGRÜNDUNG: Die negative Kreuzpreiselastizität zeigt, dass die Produkte Komplementärgüter sind.
-LÖSUNGSWEG: ε_CD = (∂x_D/∂p_C) × (p_C/x_D) = -20 × (320/400) = -16
-
+2. For each task, provide:
+   - Aufgabe [Nr]: [Präzise Lösung]
+   - Begründung: [1-Satz-Erklärung auf Deutsch mit Fachbegriffen]
 3. Use the knowledge base below when relevant
 4. Be extremely precise with calculations
-5. Separate multiple tasks clearly with "---"
+5. Format answers clearly and consistently
 
 KNOWLEDGE BASE:
 {knowledge}
@@ -167,61 +159,36 @@ def process_exam_image(image, knowledge_base):
 uploaded_file = st.file_uploader(
     "**Klausuraufgabe hochladen...**",
     type=["png", "jpg", "jpeg"],
+    help="Lade ein Bild der Klausuraufgabe hoch"
 )
 
 if uploaded_file is not None:
     try:
         # Bild laden und anzeigen
         image = Image.open(uploaded_file)
-        st.image(image, caption="Hochgeladene Aufgabe", use_container_width=True)
+        st.image(image, caption="Hochgeladene Klausuraufgabe", use_container_width=True)
         
         # Knowledge Base laden (gecached)
         with st.spinner("Lade Kursmaterial..."):
             knowledge_base = load_knowledge_from_drive()
             
         # Aufgabe analysieren
-        with st.spinner("Analysiere Aufgabe..."):
+        with st.spinner("Analysiere Aufgaben mit Claude 4 Opus..."):
             result = process_exam_image(image, knowledge_base)
         
         # Ergebnisse anzeigen
         st.markdown("---")
-        st.markdown("### LÖSUNG:")
+        st.markdown("### Lösungen:")
         
-        # Formatierte Ausgabe mit verbessertem Parsing
-        tasks = result.split("---")
-        
-        for i, task in enumerate(tasks):
-            if task.strip():
-                lines = task.strip().split('\n')
-                answer = None
-                reasoning = None
-                solution = []
-                
-                for line in lines:
-                    if line.startswith("ANTWORT:"):
-                        answer = line.replace("ANTWORT:", "").strip()
-                    elif line.startswith("BEGRÜNDUNG:"):
-                        reasoning = line.replace("BEGRÜNDUNG:", "").strip()
-                    elif line.startswith("LÖSUNGSWEG:"):
-                        solution.append(line.replace("LÖSUNGSWEG:", "").strip())
-                    elif solution and line.strip():
-                        solution.append(line.strip())
-                
-                # Antwort groß und unterstrichen anzeigen
-                if answer:
-                    st.markdown(f"### <u>Aufgabe: {answer}</u>", unsafe_allow_html=True)
-                    
-                    # Details in kleiner Schrift
-                    if reasoning or solution:
-                        st.markdown("<small>", unsafe_allow_html=True)
-                        if reasoning:
-                            st.markdown(f"**Begründung:** {reasoning}")
-                        if solution:
-                            st.markdown(f"**Lösungsweg:** {' '.join(solution)}")
-                        st.markdown("</small>", unsafe_allow_html=True)
-                    
-                    if i < len(tasks) - 1:
-                        st.markdown("---")
+        # Formatierte Ausgabe
+        for line in result.split('\n'):
+            if line.strip():
+                if line.startswith('Aufgabe'):
+                    st.markdown(f"**{line}**")
+                elif line.startswith('Begründung:'):
+                    st.markdown(f"_{line}_")
+                else:
+                    st.markdown(line)
                     
     except Exception as e:
         st.error(f"❌ Fehler bei der Verarbeitung: {str(e)}")
