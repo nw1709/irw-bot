@@ -143,11 +143,11 @@ try:
                 )
                 extracted_text = response.text
 
-            # --- Claude Analyse ---
+            # --- Claude 4 Opus Analyse ---
             if extracted_text:
                 client = Anthropic(api_key=st.secrets["claude_key"])
                 response = client.messages.create(
-                    model="claude-3-opus-20240229",
+                    model="claude-4-opus",
                     max_tokens=4000,
                     messages=[{
                         "role": "user",
@@ -185,21 +185,13 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
         try:
             client = Anthropic(api_key=st.secrets["claude_key"])
             response = client.messages.create(
-                model="claude-3-opus-20240229",  # Korrekte Schreibweise "model" statt "mode1"
+                model="claude-4-opus",
                 messages=[{
                     "role": "user",
                     "content": f"""Antworte genau im folgenden Format ohne zusätzlichen Text:
 
                     Aufgabe [Nr]: [Lösung]
-                    Begründung: [1-Satz-Erklärung mit Hagen-Skriptreferenz]
-
-                    Regeln:
-                    • Nur Lösungen aus Hagen-Modulmaterialien (Skripte/Altklausuren)
-                    • Keine Bestätigungen ('Verstanden...')
-                    • Keine Überschriften
-                    • Deutsche Fachbegriffe
-                    • Keine Wiederholungen
-                    • Immer Skriptstelle angeben (z.B. "Hagen-Skript 2023 S.45")"""
+                    Begründung: [1-Satz-Erklärung]"""
                 }],
                 max_tokens=1000,  # Erhöht für Skriptreferenzen
                 temperature=0
@@ -220,6 +212,9 @@ if 'extracted_text' in locals() or 'extracted_text' in globals():
             ]
             
             st.markdown("\n".join(clean_lines))
+
+         # Diagnose-Ausgabe
+            st.code(f"Verwendetes Modell: {response.model}")
             
         except Exception as e:
             st.error(f"Fehler: {str(e)}")
