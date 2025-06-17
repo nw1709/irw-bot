@@ -197,4 +197,3 @@ if uploaded_file is not None:
 # --- Footer ---
 st.markdown("---")
 st.caption("🦊 Koifox-Bot | Made by Fox & Powered by Claude 4 Opus Vision")
-```
