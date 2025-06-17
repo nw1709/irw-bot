@@ -108,7 +108,7 @@ def process_exam_image(image, use_knowledge_base=False):
         buffered = io.BytesIO()
         
         # Bildoptimierung (Balance zwischen Qualität und Größe)
-        max_dimension = 1536
+        max_dimension = 2048px
         image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
         
         if image.mode in ('RGBA', 'P'):
@@ -116,7 +116,7 @@ def process_exam_image(image, use_knowledge_base=False):
             rgb_image.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
             image = rgb_image
         
-        image.save(buffered, format="JPEG", quality=90)
+        image.save(buffered, format="JPEG", quality=100)
         image_data = base64.b64encode(buffered.getvalue()).decode()
         
         # Knowledge Base Section
@@ -124,8 +124,8 @@ def process_exam_image(image, use_knowledge_base=False):
         if use_knowledge_base:
             knowledge_base = load_knowledge_from_drive()
             if knowledge_base:
-                # Nur relevanten Teil nehmen (erste 8000 Zeichen)
-                knowledge_section = f"\n\nKNOWLEDGE BASE (relevant excerpts):\n{knowledge_base[:8000]}"
+                # Nur relevanten Teil nehmen (erste 20000 Zeichen)
+                knowledge_section = f"\n\nKNOWLEDGE BASE (relevant excerpts):\n{knowledge_base[:20000]}"
         
         prompt = ACCOUNTING_PROMPT.format(knowledge_section=knowledge_section)
         
