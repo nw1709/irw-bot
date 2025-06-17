@@ -108,7 +108,7 @@ def process_exam_image(image, use_knowledge_base=False):
         buffered = io.BytesIO()
         
         # Bildoptimierung (Balance zwischen Qualität und Größe)
-        max_dimension = 2048px
+        max_dimension = 2048
         image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
         
         if image.mode in ('RGBA', 'P'):
