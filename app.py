@@ -133,7 +133,7 @@ def process_exam_image(image, use_knowledge_base=False):
         client = Anthropic(api_key=st.secrets["claude_key"])
         response = client.messages.create(
             model="claude-4-opus-20250514",
-            max_tokens=1200,  # Etwas mehr für komplexe Aufgaben
+            max_tokens=5000,
             temperature=0,
             messages=[{
                 "role": "user",
