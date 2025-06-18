@@ -33,7 +33,7 @@ validate_keys()
 # --- UI-Einstellungen ---
 st.set_page_config(layout="centered", page_title="Koifox-Bot", page_icon="🦊")
 st.title("🦊 Koifox-Bot")
-st.markdown("*Using Gemini for OCR + Claude 4 Opus for solutions*")
+st.markdown("*Made with coffee, deep minimal and tiny gummy bears*")
 
 # --- Cache Management ---
 col1, col2 = st.columns([3, 1])
@@ -63,7 +63,6 @@ def extract_text_with_gemini(_image, file_hash):
                 "max_output_tokens": 4000
             }
         )
-        logger.info("OCR completed successfully")
         return response.text.strip()
     except Exception as e:
         logger.error(f"Gemini OCR Error: {str(e)}")
@@ -76,7 +75,7 @@ debug_mode = st.checkbox("🔍 Debug-Modus", value=False, help="Zeigt OCR-Ergebn
 uploaded_file = st.file_uploader(
     "**Klausuraufgabe hochladen...**",
     type=["png", "jpg", "jpeg"],
-    help="Lade ein Bild der Klausuraufgabe hoch"
+    key="file_uploader"
 )
 
 if uploaded_file is not None:
@@ -90,7 +89,7 @@ if uploaded_file is not None:
         st.image(image, caption="Hochgeladene Klausuraufgabe", use_container_width=True)
         
         # OCR (gecached)
-        with st.spinner("📖 Lese Text mit Gemini Flash..."):
+        with st.spinner("Lese Text mit Gemini Flash..."):
             ocr_text = extract_text_with_gemini(image, file_hash)
             
         # Debug: OCR-Ergebnis anzeigen
@@ -103,43 +102,31 @@ if uploaded_file is not None:
         if st.button("🧮 Aufgaben lösen", type="primary"):
             
             # Flexibler Prompt ohne Voreingenommenheit
-            prompt = f"""You are an expert in "Internes Rechnungswesen (31031)" at Fernuniversität Hagen.
+            prompt = f"""You are an accounting expert for "Internes Rechnungswesen (31031)" at Fernuniversität Hagen.
 
-DEIN FACHGEBIET umfasst das gesamte interne Rechnungswesen:
-- Kostenarten-, Kostenstellen-, Kostenträgerrechnung
-- Alle Kostenrechnungssysteme (Voll-, Teil-, Plan-, Prozesskosten etc.)
-- Kalkulation und Preisfindung
-- Deckungsbeitragsrechnung und Break-Even-Analyse
-- Budgetierung und Abweichungsanalyse
-- Investitionsrechnung
-- Verrechnungspreise
-- Controlling-Instrumente
+WICHTIG: Analysiere NUR den folgenden OCR-Text. Erfinde KEINE anderen Aufgaben!
 
-ANALYSIERE diesen OCR-Text einer Klausuraufgabe:
+OCR-TEXT START:
 {ocr_text}
+OCR-TEXT ENDE
 
-ANWEISUNGEN je nach Aufgabentyp:
-- Multiple Choice "(x aus 5)": 
-  - Prüfe JEDE Option (A-E) einzeln und unvoreingenommen
-  - Es können 0 bis 5 Optionen richtig sein
-  - Bewerte basierend auf Fachwissen, nicht auf Annahmen
-- Rechenaufgaben: Zeige Lösungsweg und Endergebnis
-- Definitionen: Verwende präzise Fachbegriffe
-- Analyseaufgaben: Strukturierte Antwort mit Begründung
+Für JEDE Aufgabe im OCR-Text:
+1. Bei Multiple Choice (x aus 5): Prüfe ALLE Optionen A-E einzeln
+2. Gib an: Aufgabe [Nr]: [Richtige Buchstabe(n)]
+3. Begründung: [1 Satz auf Deutsch]
 
 FORMAT deiner Antwort:
 Aufgabe [Nr]: [Lösung - je nach Typ: Buchstabe(n), Zahl, oder Text]
 Begründung: [Fachliche Erklärung auf Deutsch]
 
-Sei präzise und verwende die Terminologie der Fernuni Hagen."""
+Sei extrem präzise und verwende die Lösungswege und die Terminologie der Fernuni Hagen. Es gibt absolut keinen Raum für Fehler!"""
 
             if debug_mode:
                 with st.expander("🔍 Claude Prompt", expanded=False):
                     st.code(prompt)
-                    st.info(f"Prompt-Länge: {len(prompt)} Zeichen")
             
             # Claude API-Aufruf mit optimierten Parametern
-            with st.spinner("🧮 Löse Aufgaben mit Claude 4 Opus..."):
+            with st.spinner("Löse Aufgabe..."):
                 try:
                     logger.info("Calling Claude API...")
                     client = Anthropic(api_key=st.secrets["claude_key"])
@@ -164,7 +151,7 @@ Sei präzise und verwende die Terminologie der Fernuni Hagen."""
             
             # Ergebnisse anzeigen
             st.markdown("---")
-            st.markdown("### 📊 Lösungen:")
+            st.markdown("###Lösung:")
             
             # Formatierte Ausgabe
             lines = result.split('\n')
@@ -187,7 +174,6 @@ Sei präzise und verwende die Terminologie der Fernuni Hagen."""
     except Exception as e:
         logger.error(f"General error: {str(e)}")
         st.error(f"❌ Fehler: {str(e)}")
-        st.info("Stelle sicher, dass das Bild klar lesbar ist.")
 
 # --- Footer ---
 st.markdown("---")
