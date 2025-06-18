@@ -102,25 +102,59 @@ if uploaded_file is not None:
         if st.button("🧮 Aufgaben lösen", type="primary"):
             
             # Flexibler Prompt ohne Voreingenommenheit
-            prompt = f"""You are an accounting expert for "Internes Rechnungswesen (31031)" at Fernuniversität Hagen.
+            prompt = f"""You are a highly qualified accounting expert with PhD-level 
+knowledge of the university course "Internes Rechnungswesen (31031)" at Fernuniversität Hagen. 
+Your task is to answer exam questions with 100% accuracy.
 
-WICHTIG: Analysiere NUR den folgenden OCR-Text. Erfinde KEINE anderen Aufgaben!
+THEORETICAL SCOPE
+Use only the decision-oriented German managerial-accounting (Controlling) framework:
+• Cost-type, cost-center and cost-unit accounting (Kostenarten-, Kostenstellen-, Kostenträgerrechnung)
+• Full, variable, marginal, standard (Plankosten-) and process/ABC costing systems
+• Flexible and Grenzplankostenrechnung variance analysis
+• Single- and multi-level contribution-margin accounting and break-even logic
+• Causality & allocation (Verursachungs- und Zurechnungsprinzip)
+• Business-economics MRS convention (MRS = MP₂ / MP₁ unless stated otherwise)
+• Activity-analysis production & logistics models (LP, Standort- & Transportprobleme)
+• Marketing segmentation, price-elasticity, contribution-based pricing & mix planning
+
+WICHTIG: Analysiere NUR den folgenden OCR-Text. Erfinde KEINE anderen Aufgaben! 
+Sei extrem präzise und verwende die Lösungswege und die Terminologie der Fernuni Hagen. Es gibt absolut keinen Raum für Fehler!
 
 OCR-TEXT START:
 {ocr_text}
 OCR-TEXT ENDE
 
-Für JEDE Aufgabe im OCR-Text:
-1. Bei Multiple Choice (x aus 5): Prüfe ALLE Optionen A-E einzeln
-2. Gib an: Aufgabe [Nr]: [Richtige Buchstabe(n)]
-3. Begründung: [1 Satz auf Deutsch]
+KRITISCHE ANWEISUNGEN:
+1. Lies die Aufgabe SEHR sorgfältig
+2. Bei Rechenaufgaben:
+   - Zeige JEDEN Rechenschritt
+   - Prüfe dein Ergebnis nochmal
+3. Bei Multiple Choice: Prüfe jede Option einzeln
+4. VERIFIZIERE deine Antwort bevor du antwortest
+5. Stelle SICHER, dass deine Antwort mit deiner Analyse übereinstimmt!
 
-FORMAT deiner Antwort:
-Aufgabe [Nr]: [Lösung - je nach Typ: Buchstabe(n), Zahl, oder Text]
-Begründung: [Fachliche Erklärung auf Deutsch]
-
-Sei extrem präzise und verwende die Lösungswege und die Terminologie der Fernuni Hagen. Es gibt absolut keinen Raum für Fehler!"""
-
+FORMAT - WICHTIG:
+Aufgabe [Nr]: [NUR die finale Antwort - Zahl oder Buchstabe(n)]
+Begründung: [1 Satz auf Deutsch]
+"""
+# Zusätzlich: Response-Validierung einbauen
+def validate_response(response_text):
+    """Prüft ob Antwort und Berechnung konsistent sind"""
+    import re
+    
+    lines = response_text.split('\n')
+    for i, line in enumerate(lines):
+        if line.startswith('Aufgabe') and ':' in line:
+            answer = line.split(':', 1)[1].strip()
+            
+            # Suche nach Berechnung in den nächsten Zeilen
+            for j in range(i+1, min(i+5, len(lines))):
+                if 'Begründung:' in lines[j]:
+                    # Extrahiere Zahlen aus der Begründung
+                    numbers = re.findall(r'= (\d+(?:\.\d+)?)', lines[j])
+                    if numbers and answer.replace(',', '.').replace(' ', '') != numbers[-1]:
+                        st.warning(f"⚠️ Inkonsistenz entdeckt: Antwort '{answer}' stimmt nicht mit Berechnung '{numbers[-1]}' überein!")
+                        
             if debug_mode:
                 with st.expander("🔍 Claude Prompt", expanded=False):
                     st.code(prompt)
