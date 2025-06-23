@@ -59,7 +59,7 @@ def extract_text_with_gemini(_image, file_hash):
                 _image
             ],
             generation_config={
-                "temperature": 0,1,
+                "temperature": 0.1,
                 "max_output_tokens": 4000
             }
         )
@@ -150,7 +150,7 @@ Begründung: [1 Satz auf Deutsch]
                     response = client.messages.create(
                         model="claude-4-opus-20250514",
                         max_tokens=4000,    # Erhöht für vollständige Antworten
-                        temperature=0,1,      # Deterministisch
+                        temperature=0.1,      # Deterministisch
                         top_p=1.0,         # Keine Filterung der Wahrscheinlichkeiten
                         messages=[{
                             "role": "user",
