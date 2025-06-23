@@ -177,8 +177,8 @@ OCR Text:
         logger.error(f"Validation Error ({model_type}): {str(e)}")
         return None
 
-# --- OPTIMIERTER PROMPT MIT STRIKTER FORMAT-VORGABE ---
-def create_base_prompt(ocr_text):
+# --- CLAUDE PROMPT (Original beibehalten) ---
+def create_claude_prompt(ocr_text):
     return f"""You are a PhD-level expert in 'Internes Rechnungswesen (31031)' at Fernuniversität Hagen. Solve exam questions with 100% accuracy, strictly adhering to the decision-oriented German managerial-accounting framework as taught in Fernuni Hagen lectures and past exam solutions. The following text is the OCR data extracted from an exam image - use it EXCLUSIVELY to solve the questions:
 
 {ocr_text}
@@ -198,9 +198,38 @@ Begründung: [1 sentence in German]
 NO OTHER FORMAT IS ACCEPTABLE. If you cannot determine a task number, use the closest identifiable number.
 """
 
+# --- VERBESSERTER GPT PROMPT MIT STRICTER DATENVERWENDUNG ---
+def create_gpt_prompt(ocr_text):
+    return f"""You are a PhD-level expert in 'Internes Rechnungswesen (31031)' at Fernuniversität Hagen. 
+
+CRITICAL: Before solving, you MUST first extract and quote the exact numerical values from the OCR data below. DO NOT use any numbers that are not explicitly written in the OCR text.
+
+OCR DATA (use ONLY this information):
+{ocr_text}
+
+MANDATORY FIRST STEP: 
+Extract and list every numerical value mentioned in the OCR text (e.g., "450", "20", "3 GE/Liter", etc.) before solving.
+
+INSTRUCTIONS:
+1. QUOTE the exact numerical values from OCR before analyzing
+2. Read the task EXTREMELY carefully
+3. For graphs or charts: Use ONLY the explicitly provided numerical values from the OCR
+4. DO NOT infer, assume, or use any numbers not written in the OCR
+5. Analyze the problem step-by-step as per Fernuni methodology
+6. For multiple choice: Evaluate each option individually based solely on the given OCR data
+
+CRITICAL: You MUST provide answers in this EXACT format for EVERY task found:
+
+EXTRACTED VALUES: [List all numbers from OCR]
+Aufgabe [Nr]: [Final answer - letter(s) or number]
+Begründung: [1 sentence in German referencing the exact OCR values]
+
+NO OTHER FORMAT IS ACCEPTABLE. Use ONLY numbers explicitly mentioned in the OCR text.
+"""
+
 # --- SOLVER MIT CLAUDE OPUS 4 MIT VERBESSERTER SELBSTKORREKTUR ---
 def solve_with_claude(ocr_text):
-    prompt = create_base_prompt(ocr_text)
+    prompt = create_claude_prompt(ocr_text)
     try:
         logger.info("Sending request to Claude...")
         response = claude_client.messages.create(
@@ -243,9 +272,9 @@ REFORMAT NOW - USE THE EXACT FORMAT ABOVE FOR EVERY TASK:"""
         logger.error(f"Claude API Error: {str(e)}")
         raise e
 
-# --- SOLVER MIT GPT (Backup und Validierung) ---
+# --- VERBESSERTER GPT SOLVER MIT STRIKTER DATENVALIDIERUNG ---
 def solve_with_gpt(ocr_text):
-    prompt = create_base_prompt(ocr_text)
+    prompt = create_gpt_prompt(ocr_text)
     try:
         logger.info("Sending request to GPT...")
         response = openai_client.chat.completions.create(
@@ -257,7 +286,13 @@ def solve_with_gpt(ocr_text):
             seed=42
         )
         logger.info(f"GPT response received, length: {len(response.choices[0].message.content)} characters")
-        return response.choices[0].message.content
+        
+        # Log der GPT-Antwort für Debugging
+        gpt_response = response.choices[0].message.content
+        logger.info(f"GPT full response: {gpt_response}")
+        
+        return gpt_response
+        
     except Exception as e:
         logger.error(f"GPT API Error: {str(e)}")
         return None
@@ -306,6 +341,18 @@ def cross_validation_consensus(ocr_text):
                 differences.append(task)
             else:
                 st.write("✅")
+    
+    # Debug-Info für Diskrepanzen
+    if differences and debug_mode:
+        with st.expander(f"🔍 Debug: Diskrepanz-Analyse für {differences}"):
+            for task in differences:
+                claude_reasoning = claude_data.get(task, {}).get('reasoning', '')
+                gpt_reasoning = gpt_data.get(task, {}).get('reasoning', '') if gpt_data else ''
+                
+                st.write(f"**{task}:**")
+                st.write(f"Claude Begründung: {claude_reasoning}")
+                st.write(f"GPT Begründung: {gpt_reasoning}")
+                st.write("---")
     
     if not differences or not gpt_data:
         st.success("✅ Konsens: Claude-Lösung bestätigt!")
@@ -373,11 +420,11 @@ if uploaded_file is not None:
                     else:
                         st.warning("⚠️ GPT-Kontrolle zeigte Diskrepanzen – Claude-Lösung bevorzugt.")
                 
-                st.info("💡 OCR gecacht | Claude Opus 4 priorisiert | Robuste Antwortextraktion | GPT Fallback")
+                st.info("💡 OCR gecacht | Claude Opus 4 priorisiert | GPT mit verbesserter Datenvalidierung")
                     
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         st.error(f"❌ Fehler: {str(e)}")
 
 st.markdown("---")
-st.caption(f"🦊 Robuste Antwortextraktion | Claude-4 Opus | GPT-4-turbo Fallback")
+st.caption(f"🦊 Verbesserte GPT-Datenvalidierung | Claude-4 Opus primär | Präzise OCR-Nutzung")
