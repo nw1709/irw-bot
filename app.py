@@ -68,7 +68,7 @@ def extract_text_with_gemini(_image, file_hash):
             }
         )
         ocr_text = response.text.strip()
-        logger.info(f"OCR result length: {len(ocr_text)} characters, content: {ocr_text[:200]}...")  # Erste 200 Zeichen loggen
+        logger.info(f"OCR result length: {len(ocr_text)} characters, content: {ocr_text[:200]}...")
         return ocr_text
     except Exception as e:
         logger.error(f"Gemini OCR Error: {str(e)}")
@@ -141,11 +141,11 @@ def solve_with_claude(ocr_text):
         response = claude_client.messages.create(
             model="claude-4-opus-20250514",
             max_tokens=5000,
-            temperature=0.0,
+            temperature=0.1,
             top_p=0.1,
             messages=[{"role": "user", "content": prompt}]
         )
-        logger.info(f"Claude response received, length: {len(response.content[0].text)} characters, content: {response.content[0].text[:200]}...")  # Erste 200 Zeichen loggen
+        logger.info(f"Claude response received, length: {len(response.content[0].text)} characters, content: {response.content[0].text[:200]}...")
         # Selbstkorrektur-Schritt
         self_check_prompt = f"""Review the following solution for accuracy according to Fernuni Hagen standards, ensuring it uses ONLY the exact OCR data without assumptions. Correct any errors and provide the final answer in the exact format 'Aufgabe [Nr]: [letter(s)]':\n\n{response.content[0].text}"""
         self_check_response = claude_client.messages.create(
@@ -169,7 +169,7 @@ def solve_with_gpt(ocr_text):
         response = openai_client.chat.completions.create(
             model="gpt-4-turbo",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=3000,
+            max_tokens=4000,
             temperature=0.1,
             top_p=0.1,
             seed=42
@@ -225,7 +225,7 @@ def cross_validation_consensus(ocr_text):
         return False, claude_data
 
 # --- UI ---
-debug_mode = st.checkbox("🔍 Debug-Modus", value=True)  # Debug-Modus standardmäßig aktiviert für Test
+debug_mode = st.checkbox("🔍 Debug-Modus", value=True)  # Debug-Modus standardmäßig aktiviert
 
 uploaded_file = st.file_uploader(
     "**Klausuraufgabe hochladen...**",
@@ -239,7 +239,7 @@ if uploaded_file is not None:
         file_hash = hashlib.md5(file_bytes).hexdigest()
         
         image = Image.open(uploaded_file)
-        st.image(image, caption="Hochgeladene Klausuraufgabe", use_container_width=True)  # Deprecated-Warnung vermeiden
+        st.image(image, caption="Hochgeladene Klausuraufgabe", use_container_width=True)
         
         with st.spinner("Lese Text mit Gemini Flash..."):
             ocr_text = extract_text_with_gemini(image, file_hash)
@@ -249,27 +249,30 @@ if uploaded_file is not None:
                 st.code(ocr_text)
                 st.info(f"File Hash: {file_hash[:8]}...")
         
-        if st.button("🎯 Lösung mit Kreuzvalidierung", type="primary"):
-            consensus, result = cross_validation_consensus(ocr_text)
-            
-            st.markdown("---")
-            st.markdown("### 🏆 FINALE LÖSUNG:")
-            
-            if not result:
-                st.error("❌ Keine Lösung generiert. Überprüfe den OCR-Text oder Logs.")
+        if st.button("Lösung mit Kreuzvalidierung", type="primary"):
+            if not ocr_text:
+                st.error("❌ Kein OCR-Text verfügbar. Bitte überprüfe das Bild.")
             else:
-                for task, data in result.items():
-                    st.markdown(f"### {task}: **{data['answer']}**")
-                    if data['reasoning']:
-                        st.markdown(f"*Begründung: {data['reasoning']}*")
-                    st.markdown("")
-            
-            if consensus:
-                st.success("✅ Lösung durch Kreuzvalidierung bestätigt!")
-            else:
-                st.warning("⚠️ GPT-Kontrolle zeigte Diskrepanzen – Claude-Lösung bevorzugt.")
-            
-            st.info("💡 OCR gecacht | Claude Opus 4 priorisiert | GPT als Warnflag | Selbstkorrektur aktiviert")
+                consensus, result = cross_validation_consensus(ocr_text)
+                
+                st.markdown("---")
+                st.markdown("### FINALE LÖSUNG:")
+                
+                if not result:
+                    st.error("❌ Keine Lösung generiert. Überprüfe den OCR-Text oder Logs.")
+                else:
+                    for task, data in result.items():
+                        st.markdown(f"### {task}: **{data['answer']}**")
+                        if data['reasoning']:
+                            st.markdown(f"*Begründung: {data['reasoning']}*")
+                        st.markdown("")
+                
+                if consensus:
+                    st.success("✅ Lösung durch Kreuzvalidierung bestätigt!")
+                else:
+                    st.warning("⚠️ GPT-Kontrolle zeigte Diskrepanzen – Claude-Lösung bevorzugt.")
+                
+                st.info("OCR gecacht | Claude Opus 4 priorisiert | GPT als Warnflag | Selbstkorrektur aktiviert")
                     
     except Exception as e:
         logger.error(f"Error: {str(e)}")
