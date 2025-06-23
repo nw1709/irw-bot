@@ -6,7 +6,6 @@ import google.generativeai as genai
 import logging
 import hashlib
 import re
-import json
 from typing import Dict, Tuple, Optional
 
 # --- Logger Setup ---
@@ -104,61 +103,44 @@ def extract_text_with_gemini(_image, file_hash):
         logger.error(f"Gemini OCR Error: {str(e)}")
         raise e
 
-# --- Antwortextraktion mit Debug ---
+# --- Antwortextraktion ohne JSON ---
 def extract_structured_answers(solution_text: str) -> Dict:
-    """Extrahiert Antworten und Begründungen im JSON-Format mit Debug"""
-    try:
-        # Versuche, den Text direkt als JSON zu parsen
-        parsed_result = json.loads(solution_text)
-        return parsed_result
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON response: {solution_text}")
-        if debug_mode:
-            st.error(f"Debug: Ungültige JSON-Antwort - {str(e)}. Rohdaten: {solution_text}")
-        # Fallback: Manuelles Parsing
-        result = {}
-        lines = solution_text.split('\n')
-        current_task = None
-        current_answer = None
-        current_reasoning = []
-        
-        for line in lines:
-            line = line.strip()
-            task_match = re.match(r'Aufgabe\s*(\d+)\s*:\s*(.+)', line, re.IGNORECASE)
-            if task_match:
-                if current_task and current_answer:
-                    result[f"Aufgabe {current_task}"] = {
-                        'answer': current_answer,
-                        'reasoning': ' '.join(current_reasoning).strip(),
-                        'detailed_steps': [],
-                        'assumptions': [],
-                        'errors_in_cross_check': []
-                    }
-                current_task = task_match.group(1)
-                raw_answer = task_match.group(2).strip()
-                current_answer = ''.join(sorted(c for c in raw_answer.upper() if c in 'ABCDE')) if re.match(r'^[A-E,\s]+$', raw_answer) else raw_answer
-                current_reasoning = []
-            elif line.startswith('Begründung:'):
-                reasoning_text = line.replace('Begründung:', '').strip()
-                if reasoning_text:
-                    current_reasoning = [reasoning_text]
-            elif current_task and line and not line.startswith('Aufgabe'):
-                current_reasoning.append(line)
-        
-        if current_task and current_answer:
-            result[f"Aufgabe {current_task}"] = {
-                'answer': current_answer,
-                'reasoning': ' '.join(current_reasoning).strip(),
-                'detailed_steps': [],
-                'assumptions': [],
-                'errors_in_cross_check': []
-            }
-        
-        return result
+    """Extrahiert Antworten und Begründungen ohne striktes JSON"""
+    result = {}
+    lines = solution_text.split('\n')
+    current_task = None
+    current_answer = None
+    current_reasoning = []
+    
+    for line in lines:
+        line = line.strip()
+        task_match = re.match(r'Aufgabe\s*(\d+)\s*:\s*(.+)', line, re.IGNORECASE)
+        if task_match:
+            if current_task and current_answer:
+                result[f"Aufgabe {current_task}"] = {
+                    'answer': current_answer,
+                    'reasoning': ' '.join(current_reasoning).strip() if current_reasoning else "Keine Begründung verfügbar"
+                }
+            current_task = task_match.group(1)
+            raw_answer = task_match.group(2).strip()
+            current_answer = ''.join(sorted(c for c in raw_answer.upper() if c in 'ABCDE')) if re.match(r'^[A-E,\s]+$', raw_answer) else raw_answer
+            current_reasoning = []
+        elif line.startswith('Begründung:') or (current_task and line and not line.startswith('Aufgabe')):
+            reasoning_text = line.replace('Begründung:', '').strip()
+            if reasoning_text:
+                current_reasoning.append(reasoning_text)
+    
+    if current_task and current_answer:
+        result[f"Aufgabe {current_task}"] = {
+            'answer': current_answer,
+            'reasoning': ' '.join(current_reasoning).strip() if current_reasoning else "Keine Begründung verfügbar"
+        }
+    
+    return result
 
 # --- Überarbeiteter Prompt ---
 def create_base_prompt(ocr_text: str, cross_check_info: Optional[str] = None) -> str:
-    """Strenger Prompt mit Zwang zu reinem JSON"""
+    """Flexibler Prompt ohne JSON-Zwang"""
     cross_check_section = ""
     if cross_check_info:
         cross_check_section = f"""
@@ -202,21 +184,12 @@ CRITICAL INSTRUCTIONS:
    - Re-evaluate your answer
    - Ensure consistency with FernUni terminology
 5. **Error Handling**: Flag suspected OCR errors and propose corrections.
-6. **Output Format**: Return EXACTLY ONE valid JSON object with the structure below. Do NOT include any text, explanations, or formatting outside the JSON (e.g., no "Here is the answer:" or extra lines).
+6. **Output Format**: Provide answers in the format "Aufgabe X: Antwort - Begründung" for each task. Include detailed steps if calculations are involved. Do not use JSON.
 
-MANDATORY OUTPUT FORMAT (JSON ONLY):
-```json
-{
-  "task_number": "1",
-  "answer": "A",
-  "reasoning": "Single sentence in German.",
-  "detailed_steps": ["Step 1: ...", "Step 2: ..."],
-  "assumptions": ["If any, e.g., unclear OCR text"],
-  "errors_in_cross_check": ["If applicable, errors in other expert's analysis"]
-}
-```
+EXAMPLE OUTPUT:
+Aufgabe 1: A - Die Kosten sind direkt zurechenbar.
+Aufgabe 2: B - Abweichung durch Unterschied in Soll- und Ist-Kosten.
 """
-
 # --- Solver ---
 def solve_with_claude(ocr_text: str, cross_check: Optional[str] = None) -> Dict:
     """Claude Opus 4 mit Selbstprüfung"""
@@ -270,7 +243,7 @@ def cross_validation_consensus(ocr_text: str, max_rounds: int = 3) -> Tuple[bool
             except Exception as e:
                 st.error(f"API-Fehler in Runde {round_num + 1}: {str(e)}")
                 if debug_mode:
-                    st.write(f"Debug: Fehlermeldung - {str(e)}. Prüfe den rohen Antworttext in den Logs.")
+                    st.write(f"Debug: Fehlermeldung - {str(e)}. Prüfe den rohen Text in den Logs.")
                 return False, None
         
         differences = []
@@ -323,7 +296,7 @@ def cross_validation_consensus(ocr_text: str, max_rounds: int = 3) -> Tuple[bool
             except Exception as e:
                 st.error(f"API-Fehler in Runde {round_num + 2}: {str(e)}")
                 if debug_mode:
-                    st.write(f"Debug: Fehlermeldung - {str(e)}. Prüfe den rohen Antworttext in den Logs.")
+                    st.write(f"Debug: Fehlermeldung - {str(e)}. Prüfe den rohen Text in den Logs.")
                 return False, (claude_solution, gpt_solution)
     
     st.error(f"❌ Nach {max_rounds} Runden noch {len(differences)} Diskrepanzen")
@@ -363,10 +336,6 @@ if uploaded_file is not None:
                 for task, data in sorted(result.items()):
                     st.markdown(f"### {task}: **{data['answer']}**")
                     st.markdown(f"*Begründung: {data['reasoning']}*")
-                    if data.get('detailed_steps'):
-                        st.markdown(f"*Schritte:* {', '.join(data['detailed_steps'])}")
-                    if data.get('assumptions'):
-                        st.markdown(f"*Annahmen:* {', '.join(data['assumptions'])}")
                     st.markdown("")
                 
                 st.success("✅ Lösung durch Kreuzvalidierung bestätigt!")
