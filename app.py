@@ -6,7 +6,6 @@ import google.generativeai as genai
 import logging
 import hashlib
 import re
-from typing import Dict, Tuple, Optional
 
 # --- Logger Setup ---
 logging.basicConfig(level=logging.INFO)
@@ -42,14 +41,14 @@ st.markdown("*Made with coffee, deep minimal and tiny gummy bears*")
 # --- Cache Management ---
 col1, col2 = st.columns([3, 1])
 with col2:
-    if st.button("🗑️ Cache leeren", type="secondary", help="Löscht gespeicherte Ergebnisse"):
+    if st.button("🗑️ Cache leeren", type="secondary", help="Löscht gespeicherte OCR-Ergebnisse"):
         st.cache_data.clear()
         st.cache_resource.clear()
         st.rerun()
 
 # --- API Clients ---
 genai.configure(api_key=st.secrets["gemini_key"])
-vision_model = genai.GenerativeModel("gemini-1.5-flash")  # Unverändert wie gewünscht
+vision_model = genai.GenerativeModel("gemini-1.5-flash")
 claude_client = Anthropic(api_key=st.secrets["claude_key"])
 openai_client = OpenAI(api_key=st.secrets["openai_key"])
 
@@ -71,18 +70,6 @@ def get_available_gpt_model():
 
 GPT_MODEL = get_available_gpt_model()
 
-# --- RAG-Placeholder ---
-@st.cache_resource
-def initialize_rag():
-    dummy_context = """
-    Kostenartenrechnung: Einteilung in Einzel- und Gemeinkosten. Einzelkosten sind direkt zurechenbar, Gemeinkosten über Schlüssel.
-    Grenzplankostenrechnung: Abweichungsanalyse durch Vergleich von Soll- und Ist-Kosten.
-    Verursachungsprinzip: Kosten werden dem Verursacher zugeordnet.
-    """
-    return dummy_context
-
-rag_context = initialize_rag()
-
 # --- OCR mit Caching ---
 @st.cache_data(ttl=3600)
 def extract_text_with_gemini(_image, file_hash):
@@ -103,9 +90,9 @@ def extract_text_with_gemini(_image, file_hash):
         logger.error(f"Gemini OCR Error: {str(e)}")
         raise e
 
-# --- Antwortextraktion ohne JSON ---
-def extract_structured_answers(solution_text: str) -> Dict:
-    """Extrahiert Antworten und Begründungen ohne striktes JSON"""
+# --- ANTWORTEXTRAKTION ---
+def extract_structured_answers(solution_text):
+    """Extrahiert Antworten und Begründungen strukturiert"""
     result = {}
     lines = solution_text.split('\n')
     current_task = None
@@ -114,145 +101,167 @@ def extract_structured_answers(solution_text: str) -> Dict:
     
     for line in lines:
         line = line.strip()
+        
+        # Erkenne Aufgabe
         task_match = re.match(r'Aufgabe\s*(\d+)\s*:\s*(.+)', line, re.IGNORECASE)
         if task_match:
+            # Speichere vorherige Aufgabe
             if current_task and current_answer:
                 result[f"Aufgabe {current_task}"] = {
                     'answer': current_answer,
-                    'reasoning': ' '.join(current_reasoning).strip() if current_reasoning else "Keine Begründung verfügbar"
+                    'reasoning': ' '.join(current_reasoning).strip()
                 }
+            
+            # Neue Aufgabe
             current_task = task_match.group(1)
             raw_answer = task_match.group(2).strip()
-            current_answer = ''.join(sorted(c for c in raw_answer.upper() if c in 'ABCDE')) if re.match(r'^[A-E,\s]+$', raw_answer) else raw_answer
+            
+            # Normalisiere Antwort (Buchstaben sortieren)
+            if re.match(r'^[A-E,\s]+$', raw_answer):
+                current_answer = ''.join(sorted(c for c in raw_answer.upper() if c in 'ABCDE'))
+            else:
+                current_answer = raw_answer
+            
             current_reasoning = []
-        elif line.startswith('Begründung:') or (current_task and line and not line.startswith('Aufgabe')):
+        
+        # Erkenne Begründung
+        elif line.startswith('Begründung:'):
             reasoning_text = line.replace('Begründung:', '').strip()
             if reasoning_text:
-                current_reasoning.append(reasoning_text)
+                current_reasoning = [reasoning_text]
+        
+        # Fortsetzung der Begründung
+        elif current_task and line and not line.startswith('Aufgabe'):
+            current_reasoning.append(line)
     
+    # Letzte Aufgabe speichern
     if current_task and current_answer:
         result[f"Aufgabe {current_task}"] = {
             'answer': current_answer,
-            'reasoning': ' '.join(current_reasoning).strip() if current_reasoning else "Keine Begründung verfügbar"
+            'reasoning': ' '.join(current_reasoning).strip()
         }
     
     return result
 
-# --- Überarbeiteter Prompt ---
-def create_base_prompt(ocr_text: str, cross_check_info: Optional[str] = None) -> str:
-    """Flexibler Prompt ohne JSON-Zwang"""
+# --- DEIN URSPRÜNGLICHER PROMPT (UNVERÄNDERT) ---
+def create_base_prompt(ocr_text, cross_check_info=None):
+    """Dein ursprünglicher, flexibler Prompt"""
+    
     cross_check_section = ""
     if cross_check_info:
         cross_check_section = f"""
-CROSS-VALIDATION:
-Another expert provided: {cross_check_info}
-Critically analyze their reasoning, identify errors, and justify your answer.
+CROSS-VALIDATION CONTEXT:
+Another expert has provided this analysis: {cross_check_info}
+Please validate this against your own analysis and provide your definitive answer.
 """
     
-    return f"""You are a PhD-level expert in "Internes Rechnungswesen (31031)" at Fernuniversität Hagen. 
-Solve exam questions with 100% accuracy, strictly using FernUni standards and terminology.
+    return f"""You are a highly qualified accounting expert with PhD-level 
+knowledge of the university course "Internes Rechnungswesen (31031)" at Fernuniversität Hagen. 
+Your task is to answer exam questions with 100% accuracy.
 
-THEORETICAL SCOPE:
-- Cost-type, cost-center, cost-unit accounting (Kostenarten-, Kostenstellen-, Kostenträgerrechnung)
-- Full, variable, marginal, standard (Plankosten-), and process/ABC costing systems
+THEORETICAL SCOPE
+Use only the decision-oriented German managerial-accounting (Controlling) framework:
+- Cost-type, cost-center and cost-unit accounting (Kostenarten-, Kostenstellen-, Kostenträgerrechnung)
+- Full, variable, marginal, standard (Plankosten-) and process/ABC costing systems
 - Flexible and Grenzplankostenrechnung variance analysis
-- Single- and multi-level contribution-margin accounting, break-even logic
+- Single- and multi-level contribution-margin accounting and break-even logic
 - Causality & allocation (Verursachungs- und Zurechnungsprinzip)
-- Business-economics MRS convention (MRS = MP₂ / MP₁ unless specified)
+- Business-economics MRS convention (MRS = MP₂ / MP₁ unless stated otherwise)
 - Activity-analysis production & logistics models (LP, Standort- & Transportprobleme)
-- Marketing segmentation, price-elasticity, contribution-based pricing & margin planning
-
-REFERENCE MATERIAL:
-Use ONLY the following FernUni Hagen materials as reference:
-{rag_context}
+- Marketing segmentation, price-elasticity, contribution-based pricing & mix planning
 
 {cross_check_section}
 
-# OCR TEXT START:
+WICHTIG: Analysiere NUR den folgenden OCR-Text. Erfinde KEINE anderen Aufgaben! 
+Sei extrem präzise und verwende die Lösungswege und die Terminologie der Fernuni Hagen. Es gibt absolut keinen Raum für Fehler!
+
+OCR-TEXT START:
 {ocr_text}
-# OCR TEXT END
+OCR-TEXT ENDE
 
-CRITICAL INSTRUCTIONS:
-1. **Read Carefully**: Analyze ONLY the OCR text. If unclear, document assumptions.
-2. **Calculations**:
-   - Show ALL steps explicitly
-   - Verify by recomputing backwards
-3. **Multiple-Choice**:
-   - Evaluate each option individually
-   - Cross-check the final answer
-4. **Self-Validation**:
-   - Re-evaluate your answer
-   - Ensure consistency with FernUni terminology
-5. **Error Handling**: Flag suspected OCR errors and propose corrections.
-6. **Output Format**: Provide answers in the format "Aufgabe X: Antwort - Begründung" for each task. Include detailed steps if calculations are involved. Do not use JSON.
+KRITISCHE ANWEISUNGEN:
+1. Lies die Aufgabe SEHR sorgfältig
+2. Bei Rechenaufgaben:
+   - Zeige JEDEN Rechenschritt
+   - Prüfe dein Ergebnis nochmal
+3. Bei Multiple Choice: Prüfe jede Option einzeln
+4. VERIFIZIERE deine Antwort bevor du antwortest
+5. Stelle SICHER, dass deine Antwort mit deiner Analyse übereinstimmt!
 
-EXAMPLE OUTPUT:
-Aufgabe 1: A - Die Kosten sind direkt zurechenbar.
-Aufgabe 2: B - Abweichung durch Unterschied in Soll- und Ist-Kosten.
+FORMAT - WICHTIG:
+Aufgabe [Nr]: [NUR die finale Antwort - Zahl oder Buchstabe(n)]
+Begründung: [1 Satz auf Deutsch]
 """
-# --- Solver ---
-def solve_with_claude(ocr_text: str, cross_check: Optional[str] = None) -> Dict:
-    """Claude Opus 4 mit Selbstprüfung"""
-    prompt = create_base_prompt(ocr_text, cross_check)
+
+# --- OPTIMIERTE SOLVER MIT KORRIGIERTEN TOKEN-LIMITS ---
+def solve_with_claude(ocr_text, cross_check_info=None):
+    """Claude mit optimierten Parametern"""
+    prompt = create_base_prompt(ocr_text, cross_check_info)
     
     try:
         response = claude_client.messages.create(
-            model="claude-4-opus-20250514",  # Fixiert auf Claude Opus 4
-            max_tokens=6000,
-            temperature=0.1,
-            top_p=0.1,
+            model="claude-4-opus-20250514",
+            max_tokens=4000,           # Sicher für Claude
+            temperature=0.1,           # Absolut deterministisch
+            top_p=0.1,                # Sehr fokussiert auf wahrscheinlichste Tokens
             messages=[{"role": "user", "content": prompt}]
         )
-        response_text = response.content[0].text
-        return extract_structured_answers(response_text)
+        return response.content[0].text
     except Exception as e:
         logger.error(f"Claude API Error: {str(e)}")
         raise e
 
-def solve_with_gpt(ocr_text: str, cross_check: Optional[str] = None) -> Dict:
-    """GPT als Backup"""
-    prompt = create_base_prompt(ocr_text, cross_check)
+def solve_with_gpt(ocr_text, cross_check_info=None):
+    """GPT mit korrigierten Token-Limits"""
+    prompt = create_base_prompt(ocr_text, cross_check_info)
     
     try:
         response = openai_client.chat.completions.create(
             model=GPT_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=3000,
-            temperature=0.1,
-            top_p=0.1,
-            seed=42
+            max_tokens=4000,           # KORRIGIERT: Unter 4096 Limit
+            temperature=0.1,           # Absolut deterministisch
+            top_p=0.2,                # Sehr fokussiert
+            frequency_penalty=0.0,     # Keine Wiederholungsbestrafung
+            presence_penalty=0.0,      # Keine Präsenzbestrafung
+            seed=42                    # Reproduzierbare Ergebnisse
         )
-        response_text = response.choices[0].message.content
-        return extract_structured_answers(response_text)
+        return response.choices[0].message.content
     except Exception as e:
         logger.error(f"GPT API Error: {str(e)}")
         raise e
 
-# --- Kreuzvalidierung ---
-def cross_validation_consensus(ocr_text: str, max_rounds: int = 3) -> Tuple[bool, Optional[Dict]]:
-    """Intelligente Kreuzvalidierung mit aktiver Fehlerkorrektur"""
+# --- INTELLIGENTE KREUZVALIDIERUNG ---
+def cross_validation_consensus(ocr_text, max_rounds=3):
+    """Intelligente Kreuzvalidierung ohne Voreingenommenheit"""
+    
     st.markdown("### 🔄 Kreuzvalidierung")
+    
+    # Runde 1: Unabhängige Analyse
+    with st.spinner("Runde 1: Unabhängige Expertenanalyse..."):
+        try:
+            claude_solution = solve_with_claude(ocr_text)
+            gpt_solution = solve_with_gpt(ocr_text)
+        except Exception as e:
+            st.error(f"API-Fehler in Runde 1: {str(e)}")
+            return False, None
+    
+    # Strukturiere Antworten
+    claude_data = extract_structured_answers(claude_solution)
+    gpt_data = extract_structured_answers(gpt_solution)
+    
+    # Vergleiche Antworten
+    all_tasks = set(claude_data.keys()) | set(gpt_data.keys())
     
     for round_num in range(max_rounds):
         st.markdown(f"#### Runde {round_num + 1} Analyse:")
         
-        with st.spinner(f"Runde {round_num + 1}: Unabhängige Expertenanalyse..."):
-            try:
-                claude_solution = solve_with_claude(ocr_text)
-                gpt_solution = solve_with_gpt(ocr_text)
-            except Exception as e:
-                st.error(f"API-Fehler in Runde {round_num + 1}: {str(e)}")
-                if debug_mode:
-                    st.write(f"Debug: Fehlermeldung - {str(e)}. Prüfe den rohen Text in den Logs.")
-                return False, None
-        
         differences = []
         agreement_count = 0
-        all_tasks = set(claude_solution.keys()) | set(gpt_solution.keys())
         
         for task in sorted(all_tasks):
-            claude_ans = claude_solution.get(task, {}).get('answer', '')
-            gpt_ans = gpt_solution.get(task, {}).get('answer', '')
+            claude_ans = claude_data.get(task, {}).get('answer', '')
+            gpt_ans = gpt_data.get(task, {}).get('answer', '')
             
             col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
             with col1:
@@ -271,8 +280,8 @@ def cross_validation_consensus(ocr_text: str, max_rounds: int = 3) -> Tuple[bool
                         'task': task,
                         'claude': claude_ans,
                         'gpt': gpt_ans,
-                        'claude_reasoning': claude_solution.get(task, {}).get('reasoning', ''),
-                        'gpt_reasoning': gpt_solution.get(task, {}).get('reasoning', '')
+                        'claude_reasoning': claude_data.get(task, {}).get('reasoning', ''),
+                        'gpt_reasoning': gpt_data.get(task, {}).get('reasoning', '')
                     })
         
         consensus_rate = (agreement_count / len(all_tasks)) * 100 if all_tasks else 0
@@ -280,27 +289,29 @@ def cross_validation_consensus(ocr_text: str, max_rounds: int = 3) -> Tuple[bool
         
         if not differences:
             st.success("✅ Vollständiger Konsens erreicht!")
-            return True, claude_solution
+            return True, claude_data
         
-        if round_num < max_rounds - 1:
+        if round_num < max_rounds - 1:  # Nicht in letzter Runde
             st.warning(f"⚠️ {len(differences)} Diskrepanzen gefunden - Kreuzvalidierung...")
             
-            discrepancy_summary = "\n".join([
-                f"Task {d['task']}: Claude ({d['claude']}, {d['claude_reasoning']}) vs GPT ({d['gpt']}, {d['gpt_reasoning']})"
-                for d in differences
-            ])
+            # Kreuzvalidierung ohne Voreingenommenheit
+            with st.spinner(f"Kreuzvalidierung Runde {round_num + 2}..."):
+                try:
+                    # Sammle nur die Diskrepanzen als neutralen Context
+                    discrepancy_summary = f"Diskrepanzen gefunden bei: {[d['task'] for d in differences]}. Bitte nochmalige sorgfältige Prüfung."
+                    
+                    claude_solution = solve_with_claude(ocr_text, discrepancy_summary)
+                    gpt_solution = solve_with_gpt(ocr_text, discrepancy_summary)
+                except Exception as e:
+                    st.error(f"API-Fehler in Runde {round_num + 2}: {str(e)}")
+                    return False, (claude_data, gpt_data)
             
-            try:
-                claude_solution = solve_with_claude(ocr_text, discrepancy_summary)
-                gpt_solution = solve_with_gpt(ocr_text, discrepancy_summary)
-            except Exception as e:
-                st.error(f"API-Fehler in Runde {round_num + 2}: {str(e)}")
-                if debug_mode:
-                    st.write(f"Debug: Fehlermeldung - {str(e)}. Prüfe den rohen Text in den Logs.")
-                return False, (claude_solution, gpt_solution)
+            claude_data = extract_structured_answers(claude_solution)
+            gpt_data = extract_structured_answers(gpt_solution)
     
+    # Finale Bewertung
     st.error(f"❌ Nach {max_rounds} Runden noch {len(differences)} Diskrepanzen")
-    return False, (claude_solution, gpt_solution)
+    return False, (claude_data, gpt_data)
 
 # --- UI ---
 debug_mode = st.checkbox("🔍 Debug-Modus", value=False)
@@ -315,6 +326,7 @@ if uploaded_file is not None:
     try:
         file_bytes = uploaded_file.getvalue()
         file_hash = hashlib.md5(file_bytes).hexdigest()
+        
         image = Image.open(uploaded_file)
         st.image(image, caption="Hochgeladene Klausuraufgabe", use_container_width=True)
         
@@ -327,48 +339,47 @@ if uploaded_file is not None:
                 st.info(f"File Hash: {file_hash[:8]}...")
         
         if st.button("🎯 Lösung mit Kreuzvalidierung", type="primary"):
+            
             consensus, result = cross_validation_consensus(ocr_text)
             
             st.markdown("---")
             st.markdown("### 🏆 FINALE LÖSUNG:")
             
             if consensus:
-                for task, data in sorted(result.items()):
+                for task, data in result.items():
                     st.markdown(f"### {task}: **{data['answer']}**")
-                    st.markdown(f"*Begründung: {data['reasoning']}*")
+                    if data['reasoning']:
+                        st.markdown(f"*Begründung: {data['reasoning']}*")
                     st.markdown("")
-                
+                    
                 st.success("✅ Lösung durch Kreuzvalidierung bestätigt!")
                 
             else:
-                if result:
+                if result:  # Sicherstellen, dass result nicht None ist
                     st.error("❌ Experten uneinig - Beide Lösungen anzeigen:")
+                    
                     claude_final, gpt_final = result
                     
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.markdown("**Claude Finale Lösung:**")
-                        for task in sorted(claude_final.keys()):
-                            st.markdown(f"**{task}: {claude_final[task]['answer']}**")
-                            st.caption(claude_final[task]['reasoning'])
+                        st.markdown("**Claude Finale Antworten:**")
+                        for task, data in claude_final.items():
+                            st.markdown(f"**{task}: {data['answer']}**")
+                            st.caption(data['reasoning'])
                     
                     with col2:
-                        st.markdown(f"**{GPT_MODEL} Finale Lösung:**")
-                        for task in sorted(gpt_final.keys()):
-                            st.markdown(f"**{task}: {gpt_final[task]['answer']}**")
-                            st.caption(gpt_final[task]['reasoning'])
+                        st.markdown(f"**{GPT_MODEL} Finale Antworten:**")
+                        for task, data in gpt_final.items():
+                            st.markdown(f"**{task}: {data['answer']}**")
+                            st.caption(data['reasoning'])
                 else:
                     st.error("❌ Schwerwiegender API-Fehler - bitte erneut versuchen")
-                    if debug_mode:
-                        st.write("Debug: Prüfe die Logs oder API-Schlüssel. Rohdaten könnten hilfreich sein.")
             
-            st.info("✅ OCR-unverändert | Claude-4-Opus | RAG-Enabled | Kreuzvalidierung optimiert")
-    
+            st.info("💡 OCR gecacht | Token-Limits optimiert | Intelligente Kreuzvalidierung")
+                    
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         st.error(f"❌ Fehler: {str(e)}")
-        if debug_mode:
-            st.write(f"Debug: Fehlermeldung - {str(e)}")
 
 st.markdown("---")
-st.caption(f"🦊 Optimized System | Claude-4 Opus + {GPT_MODEL} | Max Precision")
+st.caption(f"🦊 Token-Optimized System | Claude-4 Opus + {GPT_MODEL} | Max Performance")
