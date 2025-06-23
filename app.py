@@ -52,7 +52,7 @@ vision_model = genai.GenerativeModel("gemini-1.5-flash")
 claude_client = Anthropic(api_key=st.secrets["claude_key"])
 openai_client = OpenAI(api_key=st.secrets["openai_key"])
 
-# --- Verbessertes OCR mit Caching (ORIGINAL) ---
+# --- Verbessertes OCR mit Caching ---
 @st.cache_data(ttl=3600)
 def extract_text_with_gemini(_image, file_hash):
     try:
@@ -149,34 +149,46 @@ OCR Text:
         logger.error(f"Validation Error ({model_type}): {str(e)}")
         return None
 
-# --- ANTI-HALLUZINATIONS-PROMPT ---
+# --- ZAHLENEXTRAKTION AUS OCR ---
+def extract_numbers_from_ocr(ocr_text):
+    """Extrahiert alle Zahlen aus dem OCR-Text"""
+    numbers = re.findall(r'\b\d+(?:\.\d+)?\b', ocr_text)
+    return list(set(numbers))  # Entferne Duplikate
+
+# --- ULTRA-STRENGER ANTI-HALLUZINATIONS-PROMPT ---
 def create_base_prompt(ocr_text):
+    allowed_numbers = extract_numbers_from_ocr(ocr_text)
+    numbers_list = ", ".join(allowed_numbers)
+    
     return f"""You are a PhD-level expert in 'Internes Rechnungswesen (31031)' at Fernuniversität Hagen. 
 
-CRITICAL: You must use ONLY the numbers and data explicitly written in the OCR text below. DO NOT use any other numbers, even if they seem logical or come from your training data.
+!!!! ABSOLUTE CRITICAL RULE !!!!
+You are ONLY allowed to use these numbers from the OCR: {numbers_list}
+ANY other number is FORBIDDEN and will result in INCORRECT solution!
 
-OCR DATA (use EXCLUSIVELY):
+OCR DATA (EXCLUSIVE source):
 {ocr_text}
 
-ANTI-HALLUCINATION RULES:
-1. Before solving, quote the EXACT numerical values from the OCR
-2. Use ONLY these quoted values in your calculations
-3. If a value is unclear, state this explicitly
-4. DO NOT substitute, assume, or use "common" values
-5. Cross-check: Does every number in your solution appear in the OCR above?
+MANDATORY FIRST STEP:
+List ONLY the allowed numbers: {numbers_list}
+
+STRICT VERIFICATION PROCESS:
+1. Before ANY calculation, state: "Using only OCR numbers: {numbers_list}"
+2. For each number you use, verify: "X is in allowed list: [YES/NO]"
+3. If ANY number is not in the allowed list, STOP and use only allowed numbers
 
 INSTRUCTIONS:
 1. Read the task EXTREMELY carefully
-2. For graphs or charts: Use only the explicitly provided intersection points and values
-3. Analyze the problem step-by-step as per Fernuni methodology
-4. For multiple choice: Evaluate each option individually based solely on the given data
-5. VERIFY: Every number you use must be from the OCR text above
+2. Use ONLY the numbers listed above: {numbers_list}
+3. Analyze step-by-step per Fernuni methodology
+4. For multiple choice: Evaluate each option individually
+5. FINAL CHECK: Every number in your solution MUST be from: {numbers_list}
 
 FORMAT - REQUIRED:
 Aufgabe [Nr]: [Final answer - letter(s) or number]
-Begründung: [1 sentence in German]
+Begründung: [1 sentence in German using ONLY allowed numbers]
 
-VERIFY AGAIN: Are all numbers in your solution from the OCR text?"""
+VERIFY AGAIN: You used ONLY these numbers: {numbers_list}"""
 
 # --- SOLVER MIT CLAUDE OPUS 4 ---
 def solve_with_claude(ocr_text):
@@ -192,28 +204,37 @@ def solve_with_claude(ocr_text):
         )
         logger.info(f"Claude response received, length: {len(response.content[0].text)} characters, content: {response.content[0].text[:200]}...")
         
-        # Selbstkorrektur mit Anti-Halluzinations-Check
-        self_check_prompt = f"""VERIFY the following solution against the OCR data. Check if ANY number used is NOT in the original OCR. If so, correct it using ONLY OCR values.
-
-OCR DATA:
-{ocr_text}
-
-SOLUTION TO VERIFY:
-{response.content[0].text}
-
-PROVIDE the corrected solution in exact format:
-Aufgabe [Nr]: [answer]
-Begründung: [reasoning with OCR values only]"""
+        # Zahlen-Verifikation
+        allowed_numbers = extract_numbers_from_ocr(ocr_text)
+        solution = response.content[0].text
         
-        self_check_response = claude_client.messages.create(
-            model="claude-4-opus-20250514",
-            max_tokens=8000,
-            temperature=0.1,
-            top_p=0.1,
-            messages=[{"role": "user", "content": self_check_prompt}]
-        )
-        logger.info(f"Self-check response received, length: {len(self_check_response.content[0].text)} characters")
-        return self_check_response.content[0].text
+        # Prüfe ob verbotene Zahlen verwendet wurden
+        used_numbers = re.findall(r'\b\d+(?:\.\d+)?\b', solution)
+        forbidden_numbers = [num for num in used_numbers if num not in allowed_numbers]
+        
+        if forbidden_numbers:
+            logger.warning(f"Claude used forbidden numbers: {forbidden_numbers}")
+            # Korrektur-Prompt
+            correction_prompt = f"""CRITICAL ERROR: You used forbidden numbers: {forbidden_numbers}
+You are ONLY allowed to use: {allowed_numbers}
+
+OCR DATA: {ocr_text}
+
+CORRECT your solution using ONLY allowed numbers: {allowed_numbers}
+Format: Aufgabe [Nr]: [answer]
+Begründung: [reasoning with only allowed numbers]"""
+            
+            correction_response = claude_client.messages.create(
+                model="claude-4-opus-20250514",
+                max_tokens=8000,
+                temperature=0.1,
+                top_p=0.1,
+                messages=[{"role": "user", "content": correction_prompt}]
+            )
+            return correction_response.content[0].text
+        
+        return solution
+        
     except Exception as e:
         logger.error(f"Claude API Error: {str(e)}")
         raise e
@@ -231,8 +252,39 @@ def solve_with_gpt(ocr_text):
             top_p=0.1,
             seed=42
         )
-        logger.info(f"GPT response received, length: {len(response.choices[0].message.content)} characters, content: {response.choices[0].message.content[:200]}...")
-        return response.choices[0].message.content
+        
+        solution = response.choices[0].message.content
+        logger.info(f"GPT response received, length: {len(solution)} characters, content: {solution[:200]}...")
+        
+        # Zahlen-Verifikation für GPT
+        allowed_numbers = extract_numbers_from_ocr(ocr_text)
+        used_numbers = re.findall(r'\b\d+(?:\.\d+)?\b', solution)
+        forbidden_numbers = [num for num in used_numbers if num not in allowed_numbers]
+        
+        if forbidden_numbers:
+            logger.warning(f"GPT used forbidden numbers: {forbidden_numbers}")
+            # Korrektur für GPT
+            correction_prompt = f"""CRITICAL ERROR: You used forbidden numbers: {forbidden_numbers}
+You are ONLY allowed to use: {allowed_numbers}
+
+OCR DATA: {ocr_text}
+
+CORRECT your solution using ONLY allowed numbers: {allowed_numbers}
+Format: Aufgabe [Nr]: [answer]
+Begründung: [reasoning with only allowed numbers]"""
+            
+            correction_response = openai_client.chat.completions.create(
+                model="gpt-4-turbo",
+                messages=[{"role": "user", "content": correction_prompt}],
+                max_tokens=3500,
+                temperature=0.1,
+                top_p=0.1,
+                seed=42
+            )
+            return correction_response.choices[0].message.content
+        
+        return solution
+        
     except Exception as e:
         logger.error(f"GPT API Error: {str(e)}")
         return None
@@ -240,6 +292,10 @@ def solve_with_gpt(ocr_text):
 # --- INTELLIGENTE KREUZVALIDIERUNG ---
 def cross_validation_consensus(ocr_text):
     st.markdown("### 🔄 Kreuzvalidierung")
+    
+    # Zeige erlaubte Zahlen
+    allowed_numbers = extract_numbers_from_ocr(ocr_text)
+    st.info(f"**Erlaubte Zahlen aus OCR:** {', '.join(allowed_numbers)}")
     
     with st.spinner("Analyse mit Claude Opus 4..."):
         claude_solution = solve_with_claude(ocr_text)
@@ -344,11 +400,11 @@ if uploaded_file is not None:
                     else:
                         st.warning("⚠️ GPT-Kontrolle zeigte Diskrepanzen – Claude-Lösung bevorzugt.")
                 
-                st.info("💡 OCR gecacht | Anti-Halluzinations-Prompts | Strikte OCR-Treue")
+                st.info("💡 OCR gecacht | Zahlen-Whitelist | Automatische Fehlerkorrektur")
                     
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         st.error(f"❌ Fehler: {str(e)}")
 
 st.markdown("---")
-st.caption(f"🦊 Anti-Halluzination System | Claude-4 Opus | GPT-4-turbo | Strikte OCR-Treue")
+st.caption(f"🦊 Zahlen-Whitelist System | Automatische Halluzinations-Korrektur")
