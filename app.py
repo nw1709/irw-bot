@@ -83,19 +83,19 @@ def initialize_rag():
 
 rag_context = initialize_rag()
 
-# --- OCR (unverändert wie gewünscht) ---
+# --- OCR mit Caching ---
 @st.cache_data(ttl=3600)
 def extract_text_with_gemini(_image, file_hash):
     try:
         logger.info(f"Starting OCR for file hash: {file_hash}")
         response = vision_model.generate_content(
             [
-                "Extract ALL text from this exam image EXACTLY as written. Include all question numbers, text, and answer options (A, B, C, D, E). Do NOT interpret or solve.",
+                "Extract ALL text from this exam image EXACTLY as written. Include all question numbers, text, graphs, charts, scales etc. and answer options (A, B, C, D, E). Do NOT interpret or solve.",
                 _image
             ],
             generation_config={
                 "temperature": 0.0,
-                "max_output_tokens": 4000
+                "max_output_tokens": 8000  # Reduziert für Kompatibilität
             }
         )
         return response.text.strip()
