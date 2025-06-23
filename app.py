@@ -205,7 +205,7 @@ def solve_with_claude(ocr_text):
         
         self_check_response = claude_client.messages.create(
             model="claude-4-opus-20250514",
-            max_tokens=10000,
+            max_tokens=4000,
             temperature=0.1,
             messages=[{"role": "user", "content": self_check_prompt}]
         )
@@ -318,7 +318,7 @@ if uploaded_file is not None:
                 gpt_validation = validate_ocr_with_llm(ocr_text, "gpt")
                 st.code(gpt_validation if gpt_validation else "Fehler bei Validierung")
         
-        if st.button("🎯 Lösung mit Kreuzvalidierung", type="primary"):
+        if st.button("Lösung mit Kreuzvalidierung", type="primary"):
             if not ocr_text:
                 st.error("❌ Kein OCR-Text verfügbar. Bitte überprüfe das Bild.")
             else:
