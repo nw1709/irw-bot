@@ -59,7 +59,7 @@ def extract_text_with_gemini(_image, file_hash):
                 _image
             ],
             generation_config={
-                "temperature": 0.1,
+                "temperature": 0.0,
                 "max_output_tokens": 4000
             }
         )
