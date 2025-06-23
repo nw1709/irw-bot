@@ -104,14 +104,17 @@ def extract_text_with_gemini(_image, file_hash):
         logger.error(f"Gemini OCR Error: {str(e)}")
         raise e
 
-# --- Antwortextraktion mit Fehlerbehandlung ---
+# --- Antwortextraktion mit Debug ---
 def extract_structured_answers(solution_text: str) -> Dict:
-    """Extrahiert Antworten und Begründungen im JSON-Format mit Fehlerbehandlung"""
+    """Extrahiert Antworten und Begründungen im JSON-Format mit Debug"""
     try:
         # Versuche, den Text direkt als JSON zu parsen
-        return json.loads(solution_text)
-    except json.JSONDecodeError:
+        parsed_result = json.loads(solution_text)
+        return parsed_result
+    except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON response: {solution_text}")
+        if debug_mode:
+            st.error(f"Debug: Ungültige JSON-Antwort - {str(e)}. Rohdaten: {solution_text}")
         # Fallback: Manuelles Parsing
         result = {}
         lines = solution_text.split('\n')
@@ -155,7 +158,7 @@ def extract_structured_answers(solution_text: str) -> Dict:
 
 # --- Überarbeiteter Prompt ---
 def create_base_prompt(ocr_text: str, cross_check_info: Optional[str] = None) -> str:
-    """Strenger Prompt mit Zwang zu JSON-Format"""
+    """Strenger Prompt mit Zwang zu reinem JSON"""
     cross_check_section = ""
     if cross_check_info:
         cross_check_section = f"""
@@ -199,9 +202,9 @@ CRITICAL INSTRUCTIONS:
    - Re-evaluate your answer
    - Ensure consistency with FernUni terminology
 5. **Error Handling**: Flag suspected OCR errors and propose corrections.
-6. **Output Format**: Return ONLY a valid JSON object with the exact structure below. Do NOT include any text outside the JSON.
+6. **Output Format**: Return EXACTLY ONE valid JSON object with the structure below. Do NOT include any text, explanations, or formatting outside the JSON (e.g., no "Here is the answer:" or extra lines).
 
-OUTPUT FORMAT (MANDATORY JSON):
+MANDATORY OUTPUT FORMAT (JSON ONLY):
 ```json
 {
   "task_number": "1",
@@ -267,7 +270,7 @@ def cross_validation_consensus(ocr_text: str, max_rounds: int = 3) -> Tuple[bool
             except Exception as e:
                 st.error(f"API-Fehler in Runde {round_num + 1}: {str(e)}")
                 if debug_mode:
-                    st.write(f"Debug: Fehlermeldung - {str(e)}")
+                    st.write(f"Debug: Fehlermeldung - {str(e)}. Prüfe den rohen Antworttext in den Logs.")
                 return False, None
         
         differences = []
@@ -320,7 +323,7 @@ def cross_validation_consensus(ocr_text: str, max_rounds: int = 3) -> Tuple[bool
             except Exception as e:
                 st.error(f"API-Fehler in Runde {round_num + 2}: {str(e)}")
                 if debug_mode:
-                    st.write(f"Debug: Fehlermeldung - {str(e)}")
+                    st.write(f"Debug: Fehlermeldung - {str(e)}. Prüfe den rohen Antworttext in den Logs.")
                 return False, (claude_solution, gpt_solution)
     
     st.error(f"❌ Nach {max_rounds} Runden noch {len(differences)} Diskrepanzen")
@@ -388,7 +391,7 @@ if uploaded_file is not None:
                 else:
                     st.error("❌ Schwerwiegender API-Fehler - bitte erneut versuchen")
                     if debug_mode:
-                        st.write("Debug: Prüfe die Logs oder API-Schlüssel.")
+                        st.write("Debug: Prüfe die Logs oder API-Schlüssel. Rohdaten könnten hilfreich sein.")
             
             st.info("✅ OCR-unverändert | Claude-4-Opus | RAG-Enabled | Kreuzvalidierung optimiert")
     
