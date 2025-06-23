@@ -222,9 +222,6 @@ def solve_with_gpt(ocr_text, cross_check_info=None):
             max_tokens=4000,           # KORRIGIERT: Unter 4096 Limit
             temperature=0.1,           # Absolut deterministisch
             top_p=0.2,                # Sehr fokussiert
-            frequency_penalty=0.0,     # Keine Wiederholungsbestrafung
-            presence_penalty=0.0,      # Keine Präsenzbestrafung
-            seed=42                    # Reproduzierbare Ergebnisse
         )
         return response.choices[0].message.content
     except Exception as e:
