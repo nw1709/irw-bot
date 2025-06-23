@@ -171,24 +171,19 @@ NO OTHER FORMAT IS ACCEPTABLE. If you cannot determine a task number, use the cl
 def create_gpt_zitatszwang_prompt(ocr_text):
     return f"""You are a PhD-level expert in 'Internes Rechnungswesen (31031)' at Fernuniversität Hagen.
 
-CRITICAL STEP 1: First, you MUST extract and quote ALL numerical values from the OCR below:
+CRITICAL STEP 1: First, you MUST extract and quote ALL text from the OCR below:
 ===== OCR DATA START =====
 {ocr_text}
 ===== OCR DATA END =====
 
-MANDATORY: Before solving anything, list EVERY number you see in the OCR text above. Example format:
-"Numbers found in OCR: 450, 20, 3, ..."
+MANDATORY: Before solving anything, repeat everything you see in the OCR text above.
 
-STEP 2: Solve using ONLY the numbers you quoted in Step 1. 
-
-ABSOLUTE RULE: If you use ANY number in your solution that is NOT in your quoted list from Step 1, you will be wrong.
+STEP 2: Solve using ONLY the text you quoted in Step 1. 
 
 Format required:
-Numbers found in OCR: [list all numbers you see]
-Aufgabe [Nr]: [Final answer - letter only]
-Begründung: [1 sentence in German using ONLY your quoted numbers]
-
-VERIFY: Does every number in your reasoning appear in your quoted list?"""
+Aufgabe [Nr]: [Final answer]
+Begründung: [brief but consise 1 sentence explanation in German]
+"""
 
 # --- SOLVER MIT CLAUDE OPUS 4 ---
 def solve_with_claude(ocr_text):
@@ -197,9 +192,8 @@ def solve_with_claude(ocr_text):
         logger.info("Sending request to Claude...")
         response = claude_client.messages.create(
             model="claude-4-opus-20250514",
-            max_tokens=8000,
+            max_tokens=10000,
             temperature=0.1,
-            top_p=0.1,
             messages=[{"role": "user", "content": prompt}]
         )
         logger.info(f"Claude response received, length: {len(response.content[0].text)} characters, content: {response.content[0].text[:200]}...")
@@ -211,9 +205,8 @@ def solve_with_claude(ocr_text):
         
         self_check_response = claude_client.messages.create(
             model="claude-4-opus-20250514",
-            max_tokens=8000,
+            max_tokens=10000,
             temperature=0.1,
-            top_p=0.1,
             messages=[{"role": "user", "content": self_check_prompt}]
         )
         logger.info(f"Self-check response received, length: {len(self_check_response.content[0].text)} characters")
@@ -230,10 +223,8 @@ def solve_with_gpt(ocr_text):
         response = openai_client.chat.completions.create(
             model="gpt-4-turbo",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=3500,
-            temperature=0.0,  # Absolut deterministisch
-            top_p=0.1,
-            seed=42
+            max_tokens=4000,
+            temperature=0.1,
         )
         logger.info(f"GPT response received, length: {len(response.choices[0].message.content)} characters")
         
@@ -334,7 +325,7 @@ if uploaded_file is not None:
                 consensus, result = cross_validation_consensus(ocr_text)
                 
                 st.markdown("---")
-                st.markdown("### 🏆 FINALE LÖSUNG:")
+                st.markdown("### FINALE LÖSUNG:")
                 
                 if result is None:
                     st.error("❌ Keine Lösung generiert. Überprüfe den OCR-Text oder Logs.")
@@ -360,4 +351,4 @@ if uploaded_file is not None:
         st.error(f"❌ Fehler: {str(e)}")
 
 st.markdown("---")
-st.caption(f"🦊 GPT Zitatszwang-System | Claude-4 Opus | Anti-Halluzination Modus")
+st.caption(f"🦊 Made by Fox & lots of love from Koi ❤️| Gemini Flash 1.5 | Claude-4 Opus | GPT-4 turbo")
