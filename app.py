@@ -64,7 +64,7 @@ def extract_text_with_gemini(_image, file_hash):
             ],
             generation_config={
                 "temperature": 0.0,
-                "max_output_tokens": 8000
+                "max_output_tokens": 10000
             }
         )
         ocr_text = response.text.strip()
@@ -127,9 +127,8 @@ OCR Text:
         if model_type == "claude":
             response = claude_client.messages.create(
                 model="claude-4-opus-20250514",
-                max_tokens=8000,
+                max_tokens=4000,
                 temperature=0.1,
-                top_p=0.1,
                 messages=[{"role": "user", "content": prompt}]
             )
             logger.info(f"Claude OCR validation received, length: {len(response.content[0].text)} characters")
@@ -138,10 +137,8 @@ OCR Text:
             response = openai_client.chat.completions.create(
                 model="gpt-4-turbo",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=3500,
+                max_tokens=4000,
                 temperature=0.1,
-                top_p=0.1,
-                seed=42
             )
             logger.info(f"GPT OCR validation received, length: {len(response.choices[0].message.content)} characters")
             return response.choices[0].message.content
