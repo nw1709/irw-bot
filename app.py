@@ -113,12 +113,14 @@ def extract_structured_answers(solution_text):
         }
         logger.info(f"Final task: Aufgabe {current_task}, answer: {current_answer}, reasoning: {result[f'Aufgabe {current_task}']['reasoning']}")
     elif not result:
-        logger.warning("No tasks detected in the solution text.")
+        logger.warning("No tasks detected in the solution text. Solution text: %s", solution_text[:200])
     return result
 
 # --- OPTIMIERTER PROMPT MIT STRIKTER EINSCHRÄNKUNG ---
 def create_base_prompt(ocr_text):
-    return f"""You are a PhD-level expert in 'Internes Rechnungswesen (31031)' at Fernuniversität Hagen. Solve exam questions with 100% accuracy, strictly adhering to the decision-oriented German managerial-accounting framework as taught in Fernuni Hagen lectures and past exam solutions. Use ONLY the exact text and numbers provided in the OCR data, without adding, inferring, or assuming any additional information.
+    return f"""You are a PhD-level expert in 'Internes Rechnungswesen (31031)' at Fernuniversität Hagen. Solve exam questions with 100% accuracy, strictly adhering to the decision-oriented German managerial-accounting framework as taught in Fernuni Hagen lectures and past exam solutions. The following text is the OCR data extracted from an exam image - use it EXCLUSIVELY to solve the questions, even if it appears incomplete:
+
+{ocr_text}
 
 INSTRUCTIONS:
 1. Read the task EXTREMELY carefully
@@ -126,7 +128,7 @@ INSTRUCTIONS:
 3. Analyze the problem step-by-step as per Fernuni methodology
 4. For multiple choice: Evaluate each option individually based solely on the given data
 5. Perform a self-check: Re-evaluate your answer to ensure it aligns with Fernuni standards and the exact OCR input
-6. Provide the final answer only if fully verified, using the exact format 'Aufgabe [Nr]: [letter(s)]'
+6. Provide the final answer only if fully verified, using the exact format 'Aufgabe [Nr]: [letter(s)]', even if the OCR data is unclear
 
 FORMAT:
 Aufgabe [Nr]: [Final answer - letter(s)]
@@ -147,10 +149,10 @@ def solve_with_claude(ocr_text):
         )
         logger.info(f"Claude response received, length: {len(response.content[0].text)} characters, content: {response.content[0].text[:200]}...")
         # Selbstkorrektur-Schritt
-        self_check_prompt = f"""Review the following solution for accuracy according to Fernuni Hagen standards, ensuring it uses ONLY the exact OCR data without assumptions. Correct any errors and provide the final answer in the exact format 'Aufgabe [Nr]: [letter(s)]':\n\n{response.content[0].text}"""
+        self_check_prompt = f"""Review the following solution for accuracy according to Fernuni Hagen standards, ensuring it uses ONLY the exact OCR data without assumptions. Correct any errors and provide the final answer in the exact format 'Aufgabe [Nr]: [letter(s)]', even if the data is incomplete:\n\n{response.content[0].text}"""
         self_check_response = claude_client.messages.create(
             model="claude-4-opus-20250514",
-            max_tokens=4000,
+            max_tokens=2000,
             temperature=0.1,
             top_p=0.1,
             messages=[{"role": "user", "content": self_check_prompt}]
@@ -169,7 +171,7 @@ def solve_with_gpt(ocr_text):
         response = openai_client.chat.completions.create(
             model="gpt-4-turbo",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=4000,
+            max_tokens=3500,
             temperature=0.1,
             top_p=0.1,
             seed=42
@@ -197,6 +199,10 @@ def cross_validation_consensus(ocr_text):
     all_tasks = set(claude_data.keys()) | set(gpt_data.keys())
     differences = []
     
+    if not claude_data and not gpt_data:
+        st.error("❌ Keine gültige Lösung von Claude oder GPT erhalten. Überprüfe den OCR-Text oder Logs.")
+        return None, None
+    
     for task in sorted(all_tasks):
         claude_ans = claude_data.get(task, {}).get('answer', 'Keine Antwort')
         gpt_ans = gpt_data.get(task, {}).get('answer', 'Keine Antwort') if gpt_data else 'Keine Antwort'
@@ -215,9 +221,7 @@ def cross_validation_consensus(ocr_text):
             else:
                 st.write("✅")
     
-    if not claude_data and not gpt_data:
-        st.error("❌ Keine gültige Lösung von Claude oder GPT erhalten. Überprüfe den OCR-Text oder Logs.")
-    elif not differences:
+    if not differences:
         st.success("✅ Konsens: Claude-Lösung bestätigt!")
         return True, claude_data
     else:
@@ -225,7 +229,7 @@ def cross_validation_consensus(ocr_text):
         return False, claude_data
 
 # --- UI ---
-debug_mode = st.checkbox("🔍 Debug-Modus", value=True)  # Debug-Modus standardmäßig aktiviert
+debug_mode = st.checkbox("🔍 Debug-Modus", value=True)
 
 uploaded_file = st.file_uploader(
     "**Klausuraufgabe hochladen...**",
@@ -258,8 +262,10 @@ if uploaded_file is not None:
                 st.markdown("---")
                 st.markdown("### FINALE LÖSUNG:")
                 
-                if not result:
+                if result is None:
                     st.error("❌ Keine Lösung generiert. Überprüfe den OCR-Text oder Logs.")
+                elif not result:
+                    st.error("❌ Keine Aufgaben erkannt. Überprüfe, ob der OCR-Text 'Aufgabe X: ...' enthält.")
                 else:
                     for task, data in result.items():
                         st.markdown(f"### {task}: **{data['answer']}**")
@@ -267,12 +273,13 @@ if uploaded_file is not None:
                             st.markdown(f"*Begründung: {data['reasoning']}*")
                         st.markdown("")
                 
-                if consensus:
-                    st.success("✅ Lösung durch Kreuzvalidierung bestätigt!")
-                else:
-                    st.warning("⚠️ GPT-Kontrolle zeigte Diskrepanzen – Claude-Lösung bevorzugt.")
+                if consensus is not None:
+                    if consensus:
+                        st.success("✅ Lösung durch Kreuzvalidierung bestätigt!")
+                    else:
+                        st.warning("⚠️ GPT-Kontrolle zeigte Diskrepanzen – Claude-Lösung bevorzugt.")
                 
-                st.info("OCR gecacht | Claude Opus 4 priorisiert | GPT als Warnflag | Selbstkorrektur aktiviert")
+                st.info("💡 OCR gecacht | Claude Opus 4 priorisiert | GPT als Warnflag | Selbstkorrektur aktiviert")
                     
     except Exception as e:
         logger.error(f"Error: {str(e)}")
