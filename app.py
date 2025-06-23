@@ -72,10 +72,9 @@ def get_available_gpt_model():
 
 GPT_MODEL = get_available_gpt_model()
 
-# --- RAG-Placeholder (für Skripte/Altklausuren) ---
+# --- RAG-Placeholder ---
 @st.cache_resource
 def initialize_rag():
-    # Platzhalter für Skripte (kann später mit echten Daten gefüllt werden)
     dummy_context = """
     Kostenartenrechnung: Einteilung in Einzel- und Gemeinkosten. Einzelkosten sind direkt zurechenbar, Gemeinkosten über Schlüssel.
     Grenzplankostenrechnung: Abweichungsanalyse durch Vergleich von Soll- und Ist-Kosten.
@@ -105,12 +104,14 @@ def extract_text_with_gemini(_image, file_hash):
         logger.error(f"Gemini OCR Error: {str(e)}")
         raise e
 
-# --- Antwortextraktion ---
+# --- Antwortextraktion mit Fehlerbehandlung ---
 def extract_structured_answers(solution_text: str) -> Dict:
-    """Extrahiert Antworten und Begründungen im JSON-Format"""
+    """Extrahiert Antworten und Begründungen im JSON-Format mit Fehlerbehandlung"""
     try:
+        # Versuche, den Text direkt als JSON zu parsen
         return json.loads(solution_text)
     except json.JSONDecodeError:
+        logger.error(f"Invalid JSON response: {solution_text}")
         # Fallback: Manuelles Parsing
         result = {}
         lines = solution_text.split('\n')
@@ -154,7 +155,7 @@ def extract_structured_answers(solution_text: str) -> Dict:
 
 # --- Überarbeiteter Prompt ---
 def create_base_prompt(ocr_text: str, cross_check_info: Optional[str] = None) -> str:
-    """Strenger Prompt mit Selbstprüfung und RAG"""
+    """Strenger Prompt mit Zwang zu JSON-Format"""
     cross_check_section = ""
     if cross_check_info:
         cross_check_section = f"""
@@ -198,8 +199,9 @@ CRITICAL INSTRUCTIONS:
    - Re-evaluate your answer
    - Ensure consistency with FernUni terminology
 5. **Error Handling**: Flag suspected OCR errors and propose corrections.
+6. **Output Format**: Return ONLY a valid JSON object with the exact structure below. Do NOT include any text outside the JSON.
 
-OUTPUT FORMAT (JSON):
+OUTPUT FORMAT (MANDATORY JSON):
 ```json
 {
   "task_number": "1",
@@ -220,8 +222,8 @@ def solve_with_claude(ocr_text: str, cross_check: Optional[str] = None) -> Dict:
     try:
         response = claude_client.messages.create(
             model="claude-4-opus-20250514",  # Fixiert auf Claude Opus 4
-            max_tokens=6000,  # Erhöht für detaillierte Antworten
-            temperature=0.1,  # Sehr deterministisch
+            max_tokens=6000,
+            temperature=0.1,
             top_p=0.1,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -264,6 +266,8 @@ def cross_validation_consensus(ocr_text: str, max_rounds: int = 3) -> Tuple[bool
                 gpt_solution = solve_with_gpt(ocr_text)
             except Exception as e:
                 st.error(f"API-Fehler in Runde {round_num + 1}: {str(e)}")
+                if debug_mode:
+                    st.write(f"Debug: Fehlermeldung - {str(e)}")
                 return False, None
         
         differences = []
@@ -315,6 +319,8 @@ def cross_validation_consensus(ocr_text: str, max_rounds: int = 3) -> Tuple[bool
                 gpt_solution = solve_with_gpt(ocr_text, discrepancy_summary)
             except Exception as e:
                 st.error(f"API-Fehler in Runde {round_num + 2}: {str(e)}")
+                if debug_mode:
+                    st.write(f"Debug: Fehlermeldung - {str(e)}")
                 return False, (claude_solution, gpt_solution)
     
     st.error(f"❌ Nach {max_rounds} Runden noch {len(differences)} Diskrepanzen")
@@ -358,7 +364,7 @@ if uploaded_file is not None:
                         st.markdown(f"*Schritte:* {', '.join(data['detailed_steps'])}")
                     if data.get('assumptions'):
                         st.markdown(f"*Annahmen:* {', '.join(data['assumptions'])}")
-                    st.markdown(f"")
+                    st.markdown("")
                 
                 st.success("✅ Lösung durch Kreuzvalidierung bestätigt!")
                 
@@ -381,12 +387,16 @@ if uploaded_file is not None:
                             st.caption(gpt_final[task]['reasoning'])
                 else:
                     st.error("❌ Schwerwiegender API-Fehler - bitte erneut versuchen")
+                    if debug_mode:
+                        st.write("Debug: Prüfe die Logs oder API-Schlüssel.")
             
             st.info("✅ OCR-unverändert | Claude-4-Opus | RAG-Enabled | Kreuzvalidierung optimiert")
     
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         st.error(f"❌ Fehler: {str(e)}")
+        if debug_mode:
+            st.write(f"Debug: Fehlermeldung - {str(e)}")
 
 st.markdown("---")
 st.caption(f"🦊 Optimized System | Claude-4 Opus + {GPT_MODEL} | Max Precision")
