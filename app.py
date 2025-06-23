@@ -224,7 +224,7 @@ if uploaded_file is not None:
         file_hash = hashlib.md5(file_bytes).hexdigest()
         
         image = Image.open(uploaded_file)
-        st.image(image, caption="Hochgeladene Klausuraufgabe", use_column_width=True)
+        st.image(image, caption="Hochgeladene Klausuraufgabe", use_container_width=True)
         
         with st.spinner("Lese Text mit Gemini Flash..."):
             ocr_text = extract_text_with_gemini(image, file_hash)
