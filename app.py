@@ -6,6 +6,7 @@ import google.generativeai as genai
 import logging
 import hashlib
 import re
+import time
 
 # --- Logger Setup ---
 logging.basicConfig(level=logging.INFO)
@@ -167,50 +168,32 @@ Begründung: [1 sentence in German]
 NO OTHER FORMAT IS ACCEPTABLE. If you cannot determine a task number, use the closest identifiable number.
 """
 
-# --- DRASTISCHER GPT ZITATSZWANG-PROMPT ---
-def create_gpt_zitatszwang_prompt(ocr_text):
-    return f"""You are a PhD-level expert in 'Internes Rechnungswesen (31031)' at Fernuniversität Hagen.
-
-CRITICAL STEP 1: First, you MUST extract and quote ALL text from the OCR below:
-===== OCR DATA START =====
-{ocr_text}
-===== OCR DATA END =====
-
-MANDATORY: Before solving anything, repeat everything you see in the OCR text above.
-
-STEP 2: Solve using ONLY the text you quoted in Step 1. 
-
-Format required:
-Aufgabe [Nr]: [Final answer]
-Begründung: [brief but consise 1 sentence explanation in German]
-"""
-
 # --- SOLVER MIT GPT---
 def solve_with_gpt(ocr_text):
-    prompt = create_claude_prompt(ocr_text)
+    prompt = create_claude_prompt(ocr_text)  # Verwende den gleichen Prompt wie Claude für Konsistenz
     try:
         logger.info("Sending request to GPT...")
-        response = gpt_client.messages.create(
-            model="gpt-turbo-4",
+        response = openai_client.chat.completions.create(
+            model="gpt-4-turbo",
             max_tokens=4000,
             temperature=0.1,
             messages=[{"role": "user", "content": prompt}]
         )
-        logger.info(f"GPT response received, length: {len(response.content[0].text)} characters, content: {response.content[0].text[:200]}...")
+        logger.info(f"GPT response received, length: {len(response.choices[0].message.content)} characters, content: {response.choices[0].message.content[:200]}...")
         
         # Selbstkorrektur
         self_check_prompt = f"""VERIFY the following solution against the OCR data. Correct any errors and ensure exact format 'Aufgabe [Nr]: [answer]' followed by 'Begründung: [reasoning]':
 
-{response.content[0].text}"""
+{response.choices[0].message.content}"""
         
-        self_check_response = gpt_client.messages.create(
+        self_check_response = openai_client.chat.completions.create(
             model="gpt-4-turbo",
             max_tokens=4000,
             temperature=0.1,
             messages=[{"role": "user", "content": self_check_prompt}]
         )
-        logger.info(f"Self-check response received, length: {len(self_check_response.content[0].text)} characters")
-        return self_check_response.content[0].text
+        logger.info(f"Self-check response received, length: {len(self_check_response.choices[0].message.content)} characters")
+        return self_check_response.choices[0].message.content
     except Exception as e:
         logger.error(f"GPT API Error: {str(e)}")
         raise e
@@ -218,32 +201,40 @@ def solve_with_gpt(ocr_text):
 def solve_with_claude(ocr_text):
     prompt = create_claude_prompt(ocr_text)
     try:
-        logger.info("Sending request to Claude...")
+        logger.info("Sending request to Claude with streaming...")
+        start_time = time.time()
         response = claude_client.messages.create(
             model="claude-4-opus-20250514",
             max_tokens=10000,
             temperature=0.1,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            stream=True  # Aktiviere Streaming für lange Operationen
         )
-        logger.info(f"Claude response received, length: {len(response.content[0].text)} characters, content: {response.content[0].text[:200]}...")
+        full_response = ""
+        for chunk in response:
+            full_response += chunk.delta.content or ""
+        logger.info(f"Claude response received in {time.time() - start_time:.2f} seconds, length: {len(full_response)} characters, content: {full_response[:200]}...")
         
         # Selbstkorrektur
         self_check_prompt = f"""VERIFY the following solution against the OCR data. Correct any errors and ensure exact format 'Aufgabe [Nr]: [answer]' followed by 'Begründung: [reasoning]':
 
-{response.content[0].text}"""
+{full_response}"""
         
         self_check_response = claude_client.messages.create(
             model="claude-4-opus-20250514",
             max_tokens=4000,
             temperature=0.1,
-            messages=[{"role": "user", "content": self_check_prompt}]
+            messages=[{"role": "user", "content": self_check_prompt}],
+            stream=True
         )
-        logger.info(f"Self-check response received, length: {len(self_check_response.content[0].text)} characters")
-        return self_check_response.content[0].text
+        self_check_full = ""
+        for chunk in self_check_response:
+            self_check_full += chunk.delta.content or ""
+        logger.info(f"Self-check response received in {time.time() - start_time:.2f} seconds, length: {len(self_check_full)} characters")
+        return self_check_full
     except Exception as e:
         logger.error(f"Claude API Error: {str(e)}")
         raise e
-
 
 # --- INTELLIGENTE KREUZVALIDIERUNG ---
 def cross_validation_consensus(ocr_text):
@@ -254,7 +245,7 @@ def cross_validation_consensus(ocr_text):
     claude_data = extract_structured_answers(claude_solution)
     logger.info(f"Claude data extracted: {claude_data}")
     
-    with st.spinner("Überprüfung mit GPT-4-turbo (Zitatszwang)..."):
+    with st.spinner("Überprüfung mit GPT-4-turbo..."):
         gpt_solution = solve_with_gpt(ocr_text)
         gpt_data = extract_structured_answers(gpt_solution) if gpt_solution else {}
         logger.info(f"GPT data extracted: {gpt_data}")
