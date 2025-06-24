@@ -7,8 +7,6 @@ import logging
 import hashlib
 import re
 from sentence_transformers import SentenceTransformer, util
-import cv2
-import numpy as np
 
 # --- Logger Setup ---
 logging.basicConfig(level=logging.INFO)
