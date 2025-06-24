@@ -326,7 +326,6 @@ Beispiel:
 Aufgabe 48: 11.50
 Begründung: Der gewinnmaximale Preis wird durch Ableiten der Gewinnfunktion bestimmt...
 Berechnung: dG/dp = (450 - 22.5·p) + (p - 3)·(-22.5) = 0, p = 517.5/45 = 11.50
-Annahmen: Keine
 
 WICHTIG: Vergiss keine Aufgabe!"""
 
@@ -355,18 +354,16 @@ WICHTIGE REGELN:
 2. Bei Homogenität: f(r₁,r₂) = (r₁^α + r₂^β)^γ ist NUR homogen wenn α = β
 3. Beantworte JEDE Aufgabe die du findest
 4. Denke schrittweise:
-   - Lies die Aufgabe sorgfältig
-   - Identifiziere alle relevanten Formeln, Werte und visuelle Daten (z.B. Graphenbeschreibungen)
-   - Arbeite ausschließlich mit den im Text angegebenen Daten; mache KEINE Annahmen, es sei denn, sie sind logisch und typisch für Fernuni-Aufgaben (z.B. Korrektheit der Anzeige)
-   - Führe die Berechnung explizit durch basierend auf den im Text angegebenen Werten und Optionen
-   - Vergleiche dein berechnetes Ergebnis mit den Multiple-Choice-Optionen (A, B, C, D, E) und wähle die passende Option
-   - Überprüfe dein Ergebnis
-5. Bei Multiple-Choice-Fragen: Analysiere jede Option (A, B, C, D, E) aus dem OCR-Text, berechne das Ergebnis und wähle die Option, die der Berechnung am nächsten kommt
+    - Lies die Aufgabe sorgfältig
+    - Identifiziere alle relevanten Formeln, Werte und visuelle Daten (z.B. Graphenbeschreibungen)
+    - Arbeite ausschließlich mit den im Text angegebenen Daten; mache KEINE Annahmen, es sei denn, sie sind logisch und typisch für Fernuni-Aufgaben (z.B. Korrektheit der Anzeige)
+    - Führe die Berechnung explizit durch
+    - Überprüfe dein Ergebnis
+5. Bei Multiple-Choice-Fragen: Analysiere jede Option und begründe, warum sie richtig oder falsch ist
 6. Wenn Graphen oder Tabellen beschrieben sind, nutze diese Informationen für die Lösung
-7. Die Endantwort MUSS entweder die gewählte Option (z.B. A, B, C, D, E) oder die berechnete Zahl auf zwei Dezimalstellen sein, je nach Kontext
-
+7. Die Endantwort MUSS exakt der berechneten Zahl entsprechen (z.B. 11.50, nicht 13.33) und auf zwei Dezimalstellen formatiert sein
 AUSGABEFORMAT (STRIKT EINHALTEN):
-Aufgabe [Nummer]: [Antwort auf zwei Dezimalstellen oder Option A-E]
+Aufgabe [Nummer]: [Antwort auf zwei Dezimalstellen]
 Begründung: [Schritt-für-Schritt-Erklärung]
 Berechnung: [Mathematische Schritte]
 Annahmen (falls nötig): [z.B. "Korrektheit der Anzeige angenommen"]
@@ -377,7 +374,6 @@ Beispiel:
 Aufgabe 48: 11.50
 Begründung: Der gewinnmaximale Preis wird durch Ableiten der Gewinnfunktion bestimmt...
 Berechnung: dG/dp = (450 - 22.5·p) + (p - 3)·(-22.5) = 0, p = 517.5/45 = 11.50
-Annahmen: Keine
 
 WICHTIG: Vergiss keine Aufgabe!"""
 
