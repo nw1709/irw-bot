@@ -93,8 +93,10 @@ def extract_text_with_gemini(_image, file_hash):
             }
         )
         ocr_text = response.text.strip()
+        
         logger.info(f"OCR result length: {len(ocr_text)} characters, content: {ocr_text[:200]}...")
         return ocr_text
+        
     except Exception as e:
         logger.error(f"Gemini OCR Error: {str(e)}")
         raise e
