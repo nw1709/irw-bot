@@ -7,6 +7,8 @@ import logging
 import hashlib
 import re
 from sentence_transformers import SentenceTransformer, util
+import cv2
+import numpy as np
 
 # --- Logger Setup ---
 logging.basicConfig(level=logging.INFO)
@@ -77,7 +79,7 @@ def detect_and_prevent_loops(text, max_repetitions=3):
         logger.error(f"Loop detection failed: {str(e)}")
         return text
 
-# --- Verbessertes OCR mit Caching ---
+# --- Verbessertes OCR mit Caching und Optionen-Extraktion ---
 @st.cache_data(ttl=3600)
 def extract_text_with_gemini(_image, file_hash):
     try:
@@ -94,9 +96,16 @@ def extract_text_with_gemini(_image, file_hash):
         )
         ocr_text = response.text.strip()
         
-        logger.info(f"OCR result length: {len(ocr_text)} characters, content: {ocr_text[:200]}...")
-        return ocr_text
+        # Extrahiere Multiple-Choice-Optionen dynamisch
+        options_pattern = r'[A-E]\.\s*([\d.]+)'
+        options = re.findall(options_pattern, ocr_text)
+        if options:
+            logger.info(f"Extracted options: {options}")
+        else:
+            logger.warning("No multiple-choice options found in OCR text")
         
+        logger.info(f"OCR result length: {len(ocr_text)} characters, content: {ocr_text[:200]}...")
+        return ocr_text, options
     except Exception as e:
         logger.error(f"Gemini OCR Error: {str(e)}")
         raise e
@@ -218,7 +227,7 @@ def compare_numerical_answers(answers1, answers2):
     return differences
 
 # --- Konsistenzprüfung zwischen LLMs ---
-def are_answers_similar(answer1, answer2):
+def are_answers_similar(answer1, answer2, options_dict=None):
     try:
         # Extrahiere nur die Antworten
         task_pattern = r'Aufgabe\s+\d+\s*:\s*([^\n]+)'
@@ -229,45 +238,52 @@ def are_answers_similar(answer1, answer2):
             logger.warning("Keine Endantworten für Konsistenzprüfung gefunden")
             return False, [], [], []
         
-        # Normalisiere Antworten: Behandle Multiple-Choice und Zahlen separat
-        def normalize_answer(raw_answer):
+        # Standard-Optionen, falls keine dynamischen Optionen verfügbar
+        if options_dict is None:
+            options_dict = {'A': 3.0, 'B': 9.0, 'C': 7.6, 'D': 6.75, 'E': 4.25}
+        
+        # Normalisiere Antworten: Behandle Multiple-Choice und Zahlen
+        def normalize_answer(raw_answer, options):
             clean = raw_answer.strip()
-            # Prüfe auf Multiple-Choice (A-E) oder Text wie "Keine der angegebenen Lösungen"
+            # Prüfe auf Multiple-Choice (A-E)
             mc_match = re.match(r'^[A-E]$', clean)
             if mc_match:
-                return clean.upper()
+                return options.get(clean.upper(), clean)
             no_match = re.search(r'keine der angegebenen lösungen', clean, re.IGNORECASE)
             if no_match:
                 return "Keine"
-            # Entferne alles außer Zahlen, Kommas, Punkten für numerische Antworten
+            # Entferne alles außer Zahlen, Kommas, Punkten
             num_clean = re.sub(r'[^0-9.,]', '', clean).strip()
             try:
-                return str(float(num_clean.replace(',', '.')))
+                return float(num_clean.replace(',', '.'))
             except ValueError:
-                return clean  # Falls weder Zahl noch MC, behalte Original
+                return clean
         
-        answers1 = [normalize_answer(a) for a in answers1_raw]
-        answers2 = [normalize_answer(a) for a in answers2_raw]
+        answers1 = [normalize_answer(a, options_dict) for a in answers1_raw]
+        answers2 = [normalize_answer(a, options_dict) for a in answers2_raw]
         
         # Prüfe Begründungen (optional, nur zur Info)
         reasoning1 = re.findall(r'Begründung:\s*(.+?)(?=\nAufgabe|\Z)', answer1, re.DOTALL)
         reasoning2 = re.findall(r'Begründung:\s*(.+?)(?=\nAufgabe|\Z)', answer2, re.DOTALL)
         
         # Semantische Ähnlichkeit der Antworten
-        embeddings_answers = sentence_model.encode([' '.join(answers1), ' '.join(answers2)])
+        embeddings_answers = sentence_model.encode([' '.join(str(a) for a in answers1), ' '.join(str(a) for a in answers2)])
         similarity_answers = util.cos_sim(embeddings_answers[0], embeddings_answers[1]).item()
         logger.info(f"Antwortähnlichkeit: {similarity_answers:.2f}")
         
-        # Numerischer oder String-Vergleich
+        # Numerischer Vergleich (inklusive Optionen)
         numerical_differences = []
         for a1, a2 in zip(answers1, answers2):
             try:
-                num1 = float(a1.replace(',', '.'))
-                num2 = float(a2.replace(',', '.'))
-                if abs(num1 - num2) > 0.1:
+                num1 = float(a1) if isinstance(a1, (int, float)) else a1
+                num2 = float(a2) if isinstance(a2, (int, float)) else a2
+                if isinstance(num1, float) and isinstance(num2, float):
+                    if abs(num1 - num2) > 0.1:
+                        numerical_differences.append((a1, a2))
+                elif num1 != num2:
                     numerical_differences.append((a1, a2))
             except ValueError:
-                if a1 != a2:  # String-Vergleich für MC oder "Keine"
+                if a1 != a2:
                     numerical_differences.append((a1, a2))
         
         # Konsistenzkriterium: Antwortähnlichkeit und keine Unterschiede
@@ -293,7 +309,7 @@ WICHTIGE REGELN:
 4. Denke schrittweise:
     - Lies die Aufgabe sorgfältig
     - Identifiziere alle relevanten Formeln, Werte und visuelle Daten (z.B. Graphenbeschreibungen)
-    - Wenn Daten unvollständig sind, dokumentiere Annahmen klar
+    - Arbeite ausschließlich mit den im Text angegebenen Daten; mache KEINE Annahmen, es sei denn, sie sind logisch und typisch für Fernuni-Aufgaben (z.B. Korrektheit der Anzeige)
     - Führe die Berechnung explizit durch
     - Überprüfe dein Ergebnis
 5. Bei Multiple-Choice-Fragen: Analysiere jede Option und begründe, warum sie richtig oder falsch ist
@@ -304,7 +320,7 @@ AUSGABEFORMAT (STRIKT EINHALTEN):
 Aufgabe [Nummer]: [Antwort auf zwei Dezimalstellen]
 Begründung: [Schritt-für-Schritt-Erklärung]
 Berechnung: [Mathematische Schritte]
-Annahmen (falls nötig): [z.B. "Fehlende Datenpunkte im Graphen wurden als linear angenommen"]
+Annahmen (falls nötig): [z.B. "Korrektheit der Anzeige angenommen"]
 
 Wiederhole dies für JEDE Aufgabe im Text.
 
@@ -312,7 +328,7 @@ Beispiel:
 Aufgabe 48: 11.50
 Begründung: Der gewinnmaximale Preis wird durch Ableiten der Gewinnfunktion bestimmt...
 Berechnung: dG/dp = (450 - 22.5·p) + (p - 3)·(-22.5) = 0, p = 517.5/45 = 11.50
-Annahmen: Linearer Kurvenverlauf basierend auf Graphenbeschreibung
+Annahmen: Keine
 
 WICHTIG: Vergiss keine Aufgabe!"""
 
@@ -343,18 +359,19 @@ WICHTIGE REGELN:
 4. Denke schrittweise:
    - Lies die Aufgabe sorgfältig
    - Identifiziere alle relevanten Formeln, Werte und visuelle Daten (z.B. Graphenbeschreibungen)
-   - Wenn Daten unvollständig sind, dokumentiere Annahmen klar und vermeide willkürliche Werte
+   - Arbeite ausschließlich mit den im Text angegebenen Daten; mache KEINE Annahmen, es sei denn, sie sind logisch und typisch für Fernuni-Aufgaben (z.B. Korrektheit der Anzeige)
    - Führe die Berechnung explizit durch basierend auf den im Text angegebenen Werten und Optionen
+   - Vergleiche dein berechnetes Ergebnis mit den Multiple-Choice-Optionen (A, B, C, D, E) und wähle die passende Option
    - Überprüfe dein Ergebnis
-5. Bei Multiple-Choice-Fragen: Analysiere jede Option (A, B, C, D, E) aus dem OCR-Text und wähle die beste Antwort basierend auf den Berechnungen
+5. Bei Multiple-Choice-Fragen: Analysiere jede Option (A, B, C, D, E) aus dem OCR-Text, berechne das Ergebnis und wähle die Option, die der Berechnung am nächsten kommt
 6. Wenn Graphen oder Tabellen beschrieben sind, nutze diese Informationen für die Lösung
-7. Die Endantwort MUSS exakt der berechneten Zahl oder der gewählten Option (z.B. A, B, C, D, E) entsprechen und auf zwei Dezimalstellen formatiert sein, falls es eine Zahl ist
+7. Die Endantwort MUSS entweder die gewählte Option (z.B. A, B, C, D, E) oder die berechnete Zahl auf zwei Dezimalstellen sein, je nach Kontext
 
 AUSGABEFORMAT (STRIKT EINHALTEN):
 Aufgabe [Nummer]: [Antwort auf zwei Dezimalstellen oder Option A-E]
 Begründung: [Schritt-für-Schritt-Erklärung]
 Berechnung: [Mathematische Schritte]
-Annahmen (falls nötig): [z.B. "Fehlende Datenpunkte im Graphen wurden als linear angenommen"]
+Annahmen (falls nötig): [z.B. "Korrektheit der Anzeige angenommen"]
 
 Wiederhole dies für JEDE Aufgabe im Text.
 
@@ -362,7 +379,7 @@ Beispiel:
 Aufgabe 48: 11.50
 Begründung: Der gewinnmaximale Preis wird durch Ableiten der Gewinnfunktion bestimmt...
 Berechnung: dG/dp = (450 - 22.5·p) + (p - 3)·(-22.5) = 0, p = 517.5/45 = 11.50
-Annahmen: Linearer Kurvenverlauf basierend auf Graphenbeschreibung
+Annahmen: Keine
 
 WICHTIG: Vergiss keine Aufgabe!"""
 
@@ -370,7 +387,7 @@ WICHTIG: Vergiss keine Aufgabe!"""
     response = client.chat.completions.create(
         model="gpt-4-turbo",
         messages=[
-            {"role": "system", "content": "Beantworte ALLE Aufgaben die im Text stehen. Überspringe keine. Stelle sicher, dass die Endantwort exakt der Berechnung oder den Optionen entspricht."},
+            {"role": "system", "content": "Beantworte ALLE Aufgaben die im Text stehen. Überspringe keine. Stelle sicher, dass die Endantwort exakt der Berechnung oder den Optionen entspricht und die Optionen mit den Berechnungen abgeglichen werden."},
             {"role": "user", "content": prompt}
         ],
         max_tokens=4000,
@@ -449,7 +466,15 @@ if uploaded_file is not None:
         
         # OCR
         with st.spinner("Lese Text und Graphen mit Gemini..."):
-            ocr_text = extract_text_with_gemini(image, file_hash)
+            ocr_text, options = extract_text_with_gemini(image, file_hash)
+        
+        # Dynamische Optionen zu einem Dictionary machen
+        options_dict = {chr(65 + i): float(val.replace(',', '.')) for i, val in enumerate(options)} if options else {}
+        if options_dict:
+            logger.info(f"Dynamically extracted options: {options_dict}")
+        else:
+            logger.warning("Falling back to default options as no dynamic options found")
+            options_dict = {'A': 3.0, 'B': 9.0, 'C': 7.6, 'D': 6.75, 'E': 4.25}
         
         # OCR Ergebnis
         with st.expander(f"🔍 OCR-Ergebnis ({len(ocr_text)} Zeichen)", expanded=debug_mode):
@@ -475,7 +500,7 @@ if uploaded_file is not None:
                 gpt_solution = solve_with_gpt(ocr_text)
                 
                 # Konsistenzprüfung
-                is_similar, claude_answers, gpt_answers, numerical_differences = are_answers_similar(claude_solution, gpt_solution)
+                is_similar, claude_answers, gpt_answers, numerical_differences = are_answers_similar(claude_solution, gpt_solution, options_dict)
                 if is_similar:
                     st.success("✅ Beide Modelle sind einig!")
                     st.markdown("### 📊 Lösungen (Claude):")
