@@ -221,7 +221,7 @@ def solve_with_claude(ocr_text, valid_task_numbers):
     try:
         response = claude_client.messages.create(
             model="claude-4-opus-20250514",
-            max_tokens=4000,
+            max_tokens=8000,
             temperature=0.1,
             system=f"Löse NUR diese Aufgaben: {', '.join(map(str, valid_task_numbers))}. KEINE ANDEREN!",
             messages=[{"role": "user", "content": prompt}]
