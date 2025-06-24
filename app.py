@@ -168,14 +168,35 @@ Begründung: [1 sentence in German]
 NO OTHER FORMAT IS ACCEPTABLE. If you cannot determine a task number, use the closest identifiable number.
 """
 
+# --- GPT PROMPT (angepasst, ohne Zitatzwang) ---
+def create_gpt_prompt(ocr_text):
+    return f"""You are a PhD-level expert in 'Internes Rechnungswesen (31031)' at Fernuniversität Hagen. Solve exam questions with 100% accuracy, strictly adhering to the decision-oriented German managerial-accounting framework as taught in Fernuni Hagen lectures and past exam solutions. The following text is the OCR data extracted from an exam image - use it EXCLUSIVELY to solve the questions:
+
+{ocr_text}
+
+INSTRUCTIONS:
+1. Read the task EXTREMELY carefully
+2. For graphs or charts: Use only the explicitly provided axis labels, scales, and intersection points to perform calculations
+3. Analyze the problem step-by-step as per Fernuni methodology
+4. For multiple choice: Evaluate each option individually based solely on the given data
+5. Perform a self-check: Re-evaluate your answer to ensure it aligns with Fernuni standards and the exact OCR input
+
+CRITICAL: You MUST provide answers in this EXACT format for EVERY task found:
+
+Aufgabe [Nr]: [Final answer - letter(s) or number]
+Begründung: [1 sentence in German]
+
+NO OTHER FORMAT IS ACCEPTABLE. If you cannot determine a task number, use the closest identifiable number.
+"""
+
 # --- SOLVER MIT GPT---
 def solve_with_gpt(ocr_text):
-    prompt = create_claude_prompt(ocr_text)  # Verwende den gleichen Prompt wie Claude für Konsistenz
+    prompt = create_gpt_prompt(ocr_text)  # Verwende den angepassten Prompt ohne Zitatzwang
     try:
         logger.info("Sending request to GPT...")
         response = openai_client.chat.completions.create(
             model="gpt-4-turbo",
-            max_tokens=4000,
+            max_tokens=4000,  # Konsistent mit Claude
             temperature=0.1,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -208,11 +229,15 @@ def solve_with_claude(ocr_text):
             max_tokens=10000,
             temperature=0.1,
             messages=[{"role": "user", "content": prompt}],
-            stream=True  # Aktiviere Streaming für lange Operationen
+            stream=True
         )
         full_response = ""
         for chunk in response:
-            full_response += chunk.delta.content or ""
+            if chunk.delta and chunk.delta.content:
+                full_response += chunk.delta.content
+            if time.time() - start_time > 600:  # 10-Minuten-Timeout
+                logger.warning("Claude processing exceeded 10 minutes, aborting.")
+                raise TimeoutError("Claude processing took too long.")
         logger.info(f"Claude response received in {time.time() - start_time:.2f} seconds, length: {len(full_response)} characters, content: {full_response[:200]}...")
         
         # Selbstkorrektur
@@ -229,7 +254,11 @@ def solve_with_claude(ocr_text):
         )
         self_check_full = ""
         for chunk in self_check_response:
-            self_check_full += chunk.delta.content or ""
+            if chunk.delta and chunk.delta.content:
+                self_check_full += chunk.delta.content
+            if time.time() - start_time > 600:  # 10-Minuten-Timeout
+                logger.warning("Claude self-check exceeded 10 minutes, aborting.")
+                raise TimeoutError("Claude self-check took too long.")
         logger.info(f"Self-check response received in {time.time() - start_time:.2f} seconds, length: {len(self_check_full)} characters")
         return self_check_full
     except Exception as e:
@@ -343,7 +372,7 @@ if uploaded_file is not None:
                     else:
                         st.warning("⚠️ GPT-Kontrolle zeigte Diskrepanzen – Claude-Lösung bevorzugt.")
                 
-                st.info("💡 OCR gecacht | GPT Zitatszwang aktiviert | Drastische Anti-Halluzination")
+                st.info("💡 OCR gecacht | GPT Zitatszwang entfernt | Drastische Anti-Halluzination")
                     
     except Exception as e:
         logger.error(f"Error: {str(e)}")
