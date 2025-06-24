@@ -368,10 +368,12 @@ WICHTIGE REGELN:
    - Wähle die Option, deren numerischer Wert exakt oder am nächsten an deiner Berechnung liegt.
    - Überprüfe dein Ergebnis.
 5. Bei Multiple-Choice-Fragen:
-   - Analysiere jede Option (A, B, C, D, E) aus dem OCR-Text.
-   - Berechne das Ergebnis unabhängig und vergleiche es mit den numerischen Werten der Optionen.
-   - Wähle die passende Option (A, B, C, D, E) basierend auf der Berechnung.
-   - Wähle „E“ („Keine der angegebenen Lösungen“) NUR, wenn KEINE der Optionen (A-D) mit der berechneten Zahl übereinstimmt (Toleranz: ±0.1).
+   - Berechne das Ergebnis unabhängig und präzise.
+   - Vergleiche das Ergebnis EXAKT mit den numerischen Werten der Optionen (A, B, C, D, E).
+   - Wähle die Option, die numerisch IDENTISCH mit dem berechneten Wert ist (Toleranz: ±0.5).
+   - Überprüfe die Zuordnung doppelt, um Interpretationsfehler zu vermeiden.
+   - Begründe die Auswahl klar mit dem berechneten Wert und der passenden Option.
+   
 6. Wenn Graphen oder Tabellen beschrieben sind, nutze diese Informationen für die Lösung.
 7. Die Endantwort MUSS die gewählte Option (z.B. A, B, C, D, E) sein, die der Berechnung entspricht.
 
