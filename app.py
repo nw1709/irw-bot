@@ -7,6 +7,8 @@ import logging
 import hashlib
 import re
 from sentence_transformers import SentenceTransformer, util
+import cv2
+import numpy as np
 
 # --- Logger Setup ---
 logging.basicConfig(level=logging.INFO)
@@ -95,15 +97,21 @@ def extract_text_with_gemini(_image, file_hash):
         ocr_text = response.text.strip()
         
         # Extrahiere Multiple-Choice-Optionen dynamisch
-        options_pattern = r'[A-E]\.\s*([\d.]+)'
+        options_pattern = r'([A-E])\.\s*([\d.]+)'
         options = re.findall(options_pattern, ocr_text)
-        if options:
-            logger.info(f"Extracted options: {options}")
+        options_dict = {}
+        for letter, value in options:
+            try:
+                options_dict[letter.upper()] = float(value.replace(',', '.'))
+            except ValueError:
+                pass
+        if options_dict:
+            logger.info(f"Extracted options: {options_dict}")
         else:
             logger.warning("No multiple-choice options found in OCR text")
         
         logger.info(f"OCR result length: {len(ocr_text)} characters, content: {ocr_text[:200]}...")
-        return ocr_text, options
+        return ocr_text, options_dict
     except Exception as e:
         logger.error(f"Gemini OCR Error: {str(e)}")
         raise e
@@ -225,7 +233,7 @@ def compare_numerical_answers(answers1, answers2):
     return differences
 
 # --- Konsistenzprüfung zwischen LLMs ---
-def are_answers_similar(answer1, answer2, options_dict=None):
+def are_answers_similar(answer1, answer2, options_dict):
     try:
         # Extrahiere nur die Antworten
         task_pattern = r'Aufgabe\s+\d+\s*:\s*([^\n]+)'
@@ -236,17 +244,16 @@ def are_answers_similar(answer1, answer2, options_dict=None):
             logger.warning("Keine Endantworten für Konsistenzprüfung gefunden")
             return False, [], [], []
         
-        # Standard-Optionen, falls keine dynamischen Optionen verfügbar
-        if options_dict is None:
-            options_dict = {'A': 3.0, 'B': 9.0, 'C': 7.6, 'D': 6.75, 'E': 4.25}
-        
         # Normalisiere Antworten: Behandle Multiple-Choice und Zahlen
         def normalize_answer(raw_answer, options):
             clean = raw_answer.strip()
             # Prüfe auf Multiple-Choice (A-E)
             mc_match = re.match(r'^[A-E]$', clean)
             if mc_match:
-                return options.get(clean.upper(), clean)
+                option_value = options.get(clean.upper())
+                if option_value is not None:
+                    return option_value
+                return clean.upper()
             no_match = re.search(r'keine der angegebenen lösungen', clean, re.IGNORECASE)
             if no_match:
                 return "Keine"
@@ -326,6 +333,7 @@ Beispiel:
 Aufgabe 48: 11.50
 Begründung: Der gewinnmaximale Preis wird durch Ableiten der Gewinnfunktion bestimmt...
 Berechnung: dG/dp = (450 - 22.5·p) + (p - 3)·(-22.5) = 0, p = 517.5/45 = 11.50
+Annahmen: Keine
 
 WICHTIG: Vergiss keine Aufgabe!"""
 
@@ -350,20 +358,27 @@ VOLLSTÄNDIGER AUFGABENTEXT:
 {ocr_text}
 
 WICHTIGE REGELN:
-1. Identifiziere ALLE Aufgaben im Text (z.B. "Aufgabe 45", "Aufgabe 46" etc.)
-2. Bei Homogenität: f(r₁,r₂) = (r₁^α + r₂^β)^γ ist NUR homogen wenn α = β
-3. Beantworte JEDE Aufgabe die du findest
+1. Identifiziere ALLE Aufgaben im Text (z.B. "Aufgabe 1", "Aufgabe 2" etc.).
+2. Bei Homogenität: f(r₁,r₂) = (r₁^α + r₂^β)^γ ist NUR homogen, wenn α = β.
+3. Beantworte JEDE Aufgabe, die du findest.
 4. Denke schrittweise:
-    - Lies die Aufgabe sorgfältig
-    - Identifiziere alle relevanten Formeln, Werte und visuelle Daten (z.B. Graphenbeschreibungen)
-    - Arbeite ausschließlich mit den im Text angegebenen Daten; mache KEINE Annahmen, es sei denn, sie sind logisch und typisch für Fernuni-Aufgaben (z.B. Korrektheit der Anzeige)
-    - Führe die Berechnung explizit durch
-    - Überprüfe dein Ergebnis
-5. Bei Multiple-Choice-Fragen: Analysiere jede Option und begründe, warum sie richtig oder falsch ist
-6. Wenn Graphen oder Tabellen beschrieben sind, nutze diese Informationen für die Lösung
-7. Die Endantwort MUSS exakt der berechneten Zahl entsprechen (z.B. 11.50, nicht 13.33) und auf zwei Dezimalstellen formatiert sein
+   - Lies die Aufgabe sorgfältig.
+   - Identifiziere alle relevanten Formeln, Werte und visuelle Daten (z.B. Graphenbeschreibungen).
+   - Arbeite ausschließlich mit den im Text angegebenen Daten; mache KEINE Annahmen, es sei denn, sie sind logisch und typisch für Fernuni-Aufgaben (z.B. Korrektheit der Anzeige).
+   - Führe die Berechnung explizit durch, basierend auf den im Text angegebenen Werten.
+   - Vergleiche dein berechnetes Ergebnis DIREKT mit den numerischen Werten der Multiple-Choice-Optionen (A, B, C, D, E) aus dem OCR-Text.
+   - Wähle die Option, deren numerischer Wert exakt oder am nächsten an deiner Berechnung liegt.
+   - Überprüfe dein Ergebnis.
+5. Bei Multiple-Choice-Fragen:
+   - Analysiere jede Option (A, B, C, D, E) aus dem OCR-Text.
+   - Berechne das Ergebnis unabhängig und vergleiche es mit den numerischen Werten der Optionen.
+   - Wähle die passende Option (A, B, C, D, E) basierend auf der Berechnung.
+   - Wähle „E“ („Keine der angegebenen Lösungen“) NUR, wenn KEINE der Optionen (A-D) mit der berechneten Zahl übereinstimmt (Toleranz: ±0.1).
+6. Wenn Graphen oder Tabellen beschrieben sind, nutze diese Informationen für die Lösung.
+7. Die Endantwort MUSS die gewählte Option (z.B. A, B, C, D, E) sein, die der Berechnung entspricht.
+
 AUSGABEFORMAT (STRIKT EINHALTEN):
-Aufgabe [Nummer]: [Antwort auf zwei Dezimalstellen]
+Aufgabe [Nummer]: [Option A-E]
 Begründung: [Schritt-für-Schritt-Erklärung]
 Berechnung: [Mathematische Schritte]
 Annahmen (falls nötig): [z.B. "Korrektheit der Anzeige angenommen"]
@@ -371,17 +386,18 @@ Annahmen (falls nötig): [z.B. "Korrektheit der Anzeige angenommen"]
 Wiederhole dies für JEDE Aufgabe im Text.
 
 Beispiel:
-Aufgabe 48: 11.50
-Begründung: Der gewinnmaximale Preis wird durch Ableiten der Gewinnfunktion bestimmt...
-Berechnung: dG/dp = (450 - 22.5·p) + (p - 3)·(-22.5) = 0, p = 517.5/45 = 11.50
+Aufgabe 1: D
+Begründung: Der Output pro Einheit von r₂ wird berechnet als x/r₂. Mit r₁ = 9, r₂ = 4 ist x = 27, also 27/4 = 6,75, was Option D entspricht.
+Berechnung: x = 4⋅√(9⋅4) + 1/3⋅9 = 27, 27/4 = 6,75
+Annahmen: Keine
 
-WICHTIG: Vergiss keine Aufgabe!"""
+WICHTIG: Vergiss keine Aufgabe! Wähle die Option basierend auf der exakten Übereinstimmung mit der Berechnung!"""
 
     client = OpenAI(api_key=st.secrets["openai_key"])
     response = client.chat.completions.create(
         model="gpt-4-turbo",
         messages=[
-            {"role": "system", "content": "Beantworte ALLE Aufgaben die im Text stehen. Überspringe keine. Stelle sicher, dass die Endantwort exakt der Berechnung oder den Optionen entspricht und die Optionen mit den Berechnungen abgeglichen werden."},
+            {"role": "system", "content": "Beantworte ALLE Aufgaben die im Text stehen. Überspringe keine. Stelle sicher, dass die Endantwort die Option (A-E) ist, die exakt der Berechnung entspricht, und dass 'E' nur gewählt wird, wenn keine Option passt."},
             {"role": "user", "content": prompt}
         ],
         max_tokens=4000,
@@ -460,13 +476,10 @@ if uploaded_file is not None:
         
         # OCR
         with st.spinner("Lese Text und Graphen mit Gemini..."):
-            ocr_text, options = extract_text_with_gemini(image, file_hash)
+            ocr_text, options_dict = extract_text_with_gemini(image, file_hash)
         
-        # Dynamische Optionen zu einem Dictionary machen
-        options_dict = {chr(65 + i): float(val.replace(',', '.')) for i, val in enumerate(options)} if options else {}
-        if options_dict:
-            logger.info(f"Dynamically extracted options: {options_dict}")
-        else:
+        # Falls keine Optionen extrahiert, Standardwerte verwenden
+        if not options_dict:
             logger.warning("Falling back to default options as no dynamic options found")
             options_dict = {'A': 3.0, 'B': 9.0, 'C': 7.6, 'D': 6.75, 'E': 4.25}
         
