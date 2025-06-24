@@ -208,7 +208,7 @@ def solve_with_claude(ocr_text):
     try:
         response = claude_client.messages.create(
             model="claude-4-opus-20250514",
-            max_tokens=10000,
+            max_tokens=8000,
             temperature=0.1,
             system="Löse ALLE Aufgaben präzise nach Fernuni-Standards. Format: 'Aufgabe X: [Antwort]'",
             messages=[{"role": "user", "content": prompt}]
@@ -252,7 +252,7 @@ def solve_with_gpt(ocr_text):
                 {"role": "system", "content": "Löse ALLE Aufgaben präzise nach Fernuni-Standards. Format: 'Aufgabe X: [Antwort]'"},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=5000,
+            max_tokens=4500,
             temperature=0.1
         )
         
