@@ -7,6 +7,8 @@ import logging
 import hashlib
 import re
 from sentence_transformers import SentenceTransformer, util
+import cv2
+import numpy as np
 
 # --- Logger Setup ---
 logging.basicConfig(level=logging.INFO)
@@ -219,26 +221,60 @@ def compare_numerical_answers(answers1, answers2):
 
 # --- Konsistenzprüfung zwischen LLMs ---
 def are_answers_similar(answer1, answer2):
-    """Vergleicht die Endantworten auf semantische Ähnlichkeit und numerisch"""
     try:
-        # Extrahiere Endantworten
+        # Extrahiere nur die Antworten
         task_pattern = r'Aufgabe\s+\d+\s*:\s*([^\n]+)'
-        answers1 = re.findall(task_pattern, answer1, re.IGNORECASE)
-        answers2 = re.findall(task_pattern, answer2, re.IGNORECASE)
+        answers1_raw = re.findall(task_pattern, answer1, re.IGNORECASE)
+        answers2_raw = re.findall(task_pattern, answer2, re.IGNORECASE)
         
-        if not answers1 or not answers2:
+        if not answers1_raw or not answers2_raw:
             logger.warning("Keine Endantworten für Konsistenzprüfung gefunden")
-            return False, [], []
+            return False, [], [], []
         
-        # Semantische Ähnlichkeit
-        embeddings = sentence_model.encode([' '.join(answers1), ' '.join(answers2)])
-        similarity = util.cos_sim(embeddings[0], embeddings[1]).item()
-        logger.info(f"Antwortähnlichkeit (Endantworten): {similarity:.2f}")
+        # Normalisiere Antworten: Behandle Multiple-Choice und Zahlen separat
+        def normalize_answer(raw_answer):
+            clean = raw_answer.strip()
+            # Prüfe auf Multiple-Choice (A-E) oder Text wie "Keine der angegebenen Lösungen"
+            mc_match = re.match(r'^[A-E]$', clean)
+            if mc_match:
+                return clean.upper()
+            no_match = re.search(r'keine der angegebenen lösungen', clean, re.IGNORECASE)
+            if no_match:
+                return "Keine"
+            # Entferne alles außer Zahlen, Kommas, Punkten für numerische Antworten
+            num_clean = re.sub(r'[^0-9.,]', '', clean).strip()
+            try:
+                return str(float(num_clean.replace(',', '.')))
+            except ValueError:
+                return clean  # Falls weder Zahl noch MC, behalte Original
         
-        # Numerischer Vergleich
-        numerical_differences = compare_numerical_answers(answers1, answers2)
+        answers1 = [normalize_answer(a) for a in answers1_raw]
+        answers2 = [normalize_answer(a) for a in answers2_raw]
         
-        return similarity > 0.8 and not numerical_differences, answers1, answers2, numerical_differences
+        # Prüfe Begründungen (optional, nur zur Info)
+        reasoning1 = re.findall(r'Begründung:\s*(.+?)(?=\nAufgabe|\Z)', answer1, re.DOTALL)
+        reasoning2 = re.findall(r'Begründung:\s*(.+?)(?=\nAufgabe|\Z)', answer2, re.DOTALL)
+        
+        # Semantische Ähnlichkeit der Antworten
+        embeddings_answers = sentence_model.encode([' '.join(answers1), ' '.join(answers2)])
+        similarity_answers = util.cos_sim(embeddings_answers[0], embeddings_answers[1]).item()
+        logger.info(f"Antwortähnlichkeit: {similarity_answers:.2f}")
+        
+        # Numerischer oder String-Vergleich
+        numerical_differences = []
+        for a1, a2 in zip(answers1, answers2):
+            try:
+                num1 = float(a1.replace(',', '.'))
+                num2 = float(a2.replace(',', '.'))
+                if abs(num1 - num2) > 0.1:
+                    numerical_differences.append((a1, a2))
+            except ValueError:
+                if a1 != a2:  # String-Vergleich für MC oder "Keine"
+                    numerical_differences.append((a1, a2))
+        
+        # Konsistenzkriterium: Antwortähnlichkeit und keine Unterschiede
+        is_similar = (similarity_answers > 0.7 and not numerical_differences)
+        return is_similar, answers1, answers2, numerical_differences
     except Exception as e:
         logger.error(f"Konsistenzprüfung fehlgeschlagen: {str(e)}")
         return False, [], [], []
@@ -257,15 +293,14 @@ WICHTIGE REGELN:
 2. Bei Homogenität: f(r₁,r₂) = (r₁^α + r₂^β)^γ ist NUR homogen wenn α = β
 3. Beantworte JEDE Aufgabe die du findest
 4. Denke schrittweise:
-   - Lies die Aufgabe sorgfältig
-   - Identifiziere alle relevanten Formeln, Werte und visuelle Daten (z.B. Graphenbeschreibungen)
-   - Wenn Daten unvollständig sind, dokumentiere Annahmen klar
-   - Führe die Berechnung explizit durch
-   - Überprüfe dein Ergebnis
+    - Lies die Aufgabe sorgfältig
+    - Identifiziere alle relevanten Formeln, Werte und visuelle Daten (z.B. Graphenbeschreibungen)
+    - Wenn Daten unvollständig sind, dokumentiere Annahmen klar
+    - Führe die Berechnung explizit durch
+    - Überprüfe dein Ergebnis
 5. Bei Multiple-Choice-Fragen: Analysiere jede Option und begründe, warum sie richtig oder falsch ist
 6. Wenn Graphen oder Tabellen beschrieben sind, nutze diese Informationen für die Lösung
-7. Für Aufgabe 48: Verwende die Parameter a = 450, b = 22.5, kv = 3, kf = 20 und die Gewinnfunktion G(p) = (p - 3)·(450 - 22.5·p) - 20. Leite ab und setze gleich Null.
-8. Die Endantwort MUSS exakt der berechneten Zahl entsprechen (z.B. 11.50, nicht 13.33) und auf zwei Dezimalstellen formatiert sein
+7. Die Endantwort MUSS exakt der berechneten Zahl entsprechen (z.B. 11.50, nicht 13.33) und auf zwei Dezimalstellen formatiert sein
 
 AUSGABEFORMAT (STRIKT EINHALTEN):
 Aufgabe [Nummer]: [Antwort auf zwei Dezimalstellen]
@@ -310,16 +345,15 @@ WICHTIGE REGELN:
 4. Denke schrittweise:
    - Lies die Aufgabe sorgfältig
    - Identifiziere alle relevanten Formeln, Werte und visuelle Daten (z.B. Graphenbeschreibungen)
-   - Wenn Daten unvollständig sind, dokumentiere Annahmen klar
-   - Führe die Berechnung explizit durch
+   - Wenn Daten unvollständig sind, dokumentiere Annahmen klar und vermeide willkürliche Werte
+   - Führe die Berechnung explizit durch basierend auf den im Text angegebenen Werten und Optionen
    - Überprüfe dein Ergebnis
-5. Bei Multiple-Choice-Fragen: Analysiere jede Option und begründe, warum sie richtig oder falsch ist
+5. Bei Multiple-Choice-Fragen: Analysiere jede Option (A, B, C, D, E) aus dem OCR-Text und wähle die beste Antwort basierend auf den Berechnungen
 6. Wenn Graphen oder Tabellen beschrieben sind, nutze diese Informationen für die Lösung
-7. Für Aufgabe 48: Verwende die Parameter a = 450, b = 22.5, kv = 3, kf = 20 und die Gewinnfunktion G(p) = (p - 3)·(450 - 22.5·p) - 20. Leite ab und setze gleich Null.
-8. Die Endantwort MUSS exakt der berechneten Zahl entsprechen (z.B. 11.50, nicht 13.33) und auf zwei Dezimalstellen formatiert sein
+7. Die Endantwort MUSS exakt der berechneten Zahl oder der gewählten Option (z.B. A, B, C, D, E) entsprechen und auf zwei Dezimalstellen formatiert sein, falls es eine Zahl ist
 
 AUSGABEFORMAT (STRIKT EINHALTEN):
-Aufgabe [Nummer]: [Antwort auf zwei Dezimalstellen]
+Aufgabe [Nummer]: [Antwort auf zwei Dezimalstellen oder Option A-E]
 Begründung: [Schritt-für-Schritt-Erklärung]
 Berechnung: [Mathematische Schritte]
 Annahmen (falls nötig): [z.B. "Fehlende Datenpunkte im Graphen wurden als linear angenommen"]
@@ -338,7 +372,7 @@ WICHTIG: Vergiss keine Aufgabe!"""
     response = client.chat.completions.create(
         model="gpt-4-turbo",
         messages=[
-            {"role": "system", "content": "Beantworte ALLE Aufgaben die im Text stehen. Überspringe keine. Stelle sicher, dass die Endantwort exakt der Berechnung entspricht."},
+            {"role": "system", "content": "Beantworte ALLE Aufgaben die im Text stehen. Überspringe keine. Stelle sicher, dass die Endantwort exakt der Berechnung oder den Optionen entspricht."},
             {"role": "user", "content": prompt}
         ],
         max_tokens=4000,
@@ -353,12 +387,6 @@ WICHTIG: Vergiss keine Aufgabe!"""
         logger.info(f"GPT loop detected and cleaned: {len(raw_response)} -> {len(cleaned_response)} chars")
     
     return cleaned_response
-
-# --- Verbesserte Ausgabeformatierung mit Konsistenzprüfung ---
-def parse_and_display_solution(solution_text, model_name="Claude"):
-    """Parst und zeigt Lösung strukturiert an, prüft Konsistenz mit Berechnung"""
-    
-    return response.choices[0].message.content
 
 # --- Verbesserte Ausgabeformatierung mit Konsistenzprüfung ---
 def parse_and_display_solution(solution_text, model_name="Claude"):
