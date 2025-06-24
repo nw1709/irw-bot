@@ -206,12 +206,14 @@ def solve_with_claude(ocr_text):
     prompt = create_optimized_prompt(ocr_text)
     
     try:
-        response = claude_client.messages.create(
+         start_time = time.time()
+            response = claude_client.messages.create(
             model="claude-4-opus-20250514",
-            max_tokens=8000,
+            max_tokens=10000,
             temperature=0.1,
-            system="Löse ALLE Aufgaben präzise nach Fernuni-Standards. Format: 'Aufgabe X: [Antwort]'",
             messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            stream=True  # Aktiviere Streaming für lange Operationen
         )
         
         solution = response.content[0].text
