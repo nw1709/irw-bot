@@ -64,7 +64,7 @@ def extract_text_with_gemini(_image, file_hash):
             ],
             generation_config={
                 "temperature": 0.0,
-                "max_output_tokens": 10000
+                "max_output_tokens": 8000
             }
         )
         ocr_text = response.text.strip()
@@ -185,7 +185,36 @@ Aufgabe [Nr]: [Final answer]
 Begründung: [brief but consise 1 sentence explanation in German]
 """
 
-# --- SOLVER MIT CLAUDE OPUS 4 ---
+# --- SOLVER MIT GPT---
+def solve_with_gpt(ocr_text):
+    prompt = create_claude_prompt(ocr_text)
+    try:
+        logger.info("Sending request to GPT...")
+        response = gpt_client.messages.create(
+            model="gpt-turbo-4",
+            max_tokens=4000,
+            temperature=0.1,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        logger.info(f"GPT response received, length: {len(response.content[0].text)} characters, content: {response.content[0].text[:200]}...")
+        
+        # Selbstkorrektur
+        self_check_prompt = f"""VERIFY the following solution against the OCR data. Correct any errors and ensure exact format 'Aufgabe [Nr]: [answer]' followed by 'Begründung: [reasoning]':
+
+{response.content[0].text}"""
+        
+        self_check_response = gpt_client.messages.create(
+            model="gpt-4-turbo",
+            max_tokens=4000,
+            temperature=0.1,
+            messages=[{"role": "user", "content": self_check_prompt}]
+        )
+        logger.info(f"Self-check response received, length: {len(self_check_response.content[0].text)} characters")
+        return self_check_response.content[0].text
+    except Exception as e:
+        logger.error(f"GPT API Error: {str(e)}")
+        raise e
+
 def solve_with_claude(ocr_text):
     prompt = create_claude_prompt(ocr_text)
     try:
@@ -215,27 +244,6 @@ def solve_with_claude(ocr_text):
         logger.error(f"Claude API Error: {str(e)}")
         raise e
 
-# --- SOLVER MIT GPT (ZITATSZWANG) ---
-def solve_with_gpt(ocr_text):
-    prompt = create_gpt_zitatszwang_prompt(ocr_text)
-    try:
-        logger.info("Sending request to GPT...")
-        response = openai_client.chat.completions.create(
-            model="gpt-4-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=4000,
-            temperature=0.1,
-        )
-        logger.info(f"GPT response received, length: {len(response.choices[0].message.content)} characters")
-        
-        # Log GPT's vollständige Antwort für Debugging
-        gpt_full_response = response.choices[0].message.content
-        logger.info(f"GPT full response: {gpt_full_response}")
-        
-        return gpt_full_response
-    except Exception as e:
-        logger.error(f"GPT API Error: {str(e)}")
-        return None
 
 # --- INTELLIGENTE KREUZVALIDIERUNG ---
 def cross_validation_consensus(ocr_text):
