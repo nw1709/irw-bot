@@ -423,7 +423,7 @@ if uploaded_file is not None:
         
         # OCR
         with st.spinner("Lese Text und Graphen mit Gemini..."):
-            ocr_text = extract_text_with_gemini_improved(image, file_hash)
+            ocr_text = extract_text_with_gemini(image, file_hash)
         
         # OCR Ergebnis
         with st.expander(f"🔍 OCR-Ergebnis ({len(ocr_text)} Zeichen)", expanded=debug_mode):
