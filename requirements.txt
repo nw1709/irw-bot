@@ -3,3 +3,4 @@ anthropic
 openai
 google-generativeai
 pillow
+sentence-transformers
