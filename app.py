@@ -35,6 +35,19 @@ def validate_keys():
 
 validate_keys()
 
+# --- UI-Einstellungen ---
+st.set_page_config(layout="centered", page_title="Koifox-Bot", page_icon="🦊")
+st.title("🦊 Koifox-Bot")
+st.markdown("*Hi der Kai ❤️ *")
+
+# --- Cache Management ---
+col1, col2 = st.columns([3, 1])
+with col2:
+    if st.button("🗑️ Cache leeren", type="secondary", help="Löscht gespeicherte OCR-Ergebnisse"):
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.rerun()
+
 # --- API Clients ---
 genai.configure(api_key=st.secrets["gemini_key"])
 vision_model = genai.GenerativeModel("gemini-1.5-flash")
