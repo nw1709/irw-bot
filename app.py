@@ -189,19 +189,18 @@ def solve_with_claude(ocr_text, tasks):
     prompt = create_optimized_prompt(ocr_text, tasks)
     
     try:
-        response = claude_client.messages.create(
-            model="claude-4-opus-20250514",
-            max_tokens=8000,
-            temperature=0.1,
-            system="Löse NUR die im OCR-Text vorhandenen Aufgaben. Format: 'Aufgabe X: [Antwort]'",
-            messages=[{"role": "user", "content": prompt}]
+        response = call_with_retry(
+            lambda: claude_client.messages.create(
+                model="claude-4-opus-20250514",
+                max_tokens=8000,
+                temperature=0.1,
+                system="Löse NUR die im OCR-Text vorhandenen Aufgaben. Format: 'Aufgabe X: [Antwort]'",
+                messages=[{"role": "user", "content": prompt}]
             )
         )
         
         solution = response.content[0].text
-
         
-        # Selbstkorrektur
         invalid_tasks = [t for t in re.findall(r'Aufgabe\s*(\d+)', solution) if t not in tasks]
         if invalid_tasks:
             correction_prompt = f"""Entferne alle halluzinierten Aufgaben aus dieser Lösung und behalte nur {', '.join(tasks)}:
@@ -215,7 +214,8 @@ Begründung: [Text]"""
                 model="claude-4-opus-20250514",
                 max_tokens=8000,
                 temperature=0.1,
-                messages=[{"role": "user", "content": correction_prompt}]
+               messages=[{"role": "user", "content": correction_prompt}]
+                )
             )
             solution = correction.content[0].text
 
