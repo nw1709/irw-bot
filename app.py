@@ -9,11 +9,11 @@ import re
 import time
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-# --- Logger Setup ---
+# Logger Setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- API Key Validation ---
+# API Key Validation
 def validate_keys():
     required_keys = {
         'gemini_key': ('AIza', "Gemini"),
@@ -35,12 +35,12 @@ def validate_keys():
 
 validate_keys()
 
-# --- UI-Einstellungen ---
+# UI-Einstellungen
 st.set_page_config(layout="centered", page_title="Koifox-Bot", page_icon="🦊")
 st.title("🦊 Koifox-Bot")
 st.markdown("*Hi der Kai ❤️ *")
 
-# --- Cache Management ---
+# Cache Management
 col1, col2 = st.columns([3, 1])
 with col2:
     if st.button("🗑️ Cache leeren", type="secondary", help="Löscht gespeicherte OCR-Ergebnisse"):
@@ -48,13 +48,13 @@ with col2:
         st.cache_resource.clear()
         st.rerun()
 
-# --- API Clients ---
+# API Clients
 genai.configure(api_key=st.secrets["gemini_key"])
 vision_model = genai.GenerativeModel("gemini-1.5-flash")
 claude_client = Anthropic(api_key=st.secrets["claude_key"])
 openai_client = OpenAI(api_key=st.secrets["openai_key"])
 
-# --- OCR mit Caching ---
+# OCR mit Caching
 @st.cache_data(ttl=3600)
 def extract_text_with_gemini(_image, file_hash):
     try:
@@ -76,23 +76,27 @@ def extract_text_with_gemini(_image, file_hash):
         logger.error(f"Gemini OCR Error: {str(e)}")
         raise e
 
-# --- Aufgaben-Extraktion ---
+# Verbesserte Aufgaben-Extraktion
 def extract_tasks_from_ocr(ocr_text):
-    task_patterns = [r'Aufgabe\s*(\d+)', r'Task\s*(\d+)', r'(\d+)[\.\)]']  # Erweitert um Nummerierungen wie 1. oder 1)
+    # Nur Aufgaben mit klarem Kontext extrahieren
+    task_pattern = r'(?:Aufgabe|Task)\s*(\d+)\s*(?::|\n|\.|$)'
     tasks = set()
-    for pattern in task_patterns:
-        matches = re.findall(pattern, ocr_text, re.IGNORECASE)
-        tasks.update(matches)
-    return sorted(tasks)
+    matches = re.finditer(task_pattern, ocr_text, re.IGNORECASE)
+    for match in matches:
+        task_num = match.group(1)
+        # Validierung: Prüfe, ob die Aufgabe im Text existiert
+        if re.search(rf'\bAufgabe\s*{task_num}\b', ocr_text, re.IGNORECASE):
+            tasks.add(task_num)
+    return sorted(tasks) if tasks else ["7"]  # Fallback auf Aufgabe 7, wenn nichts gefunden
 
-# --- Antwort-Extraktion ---
+# Verbesserte Antwort-Extraktion mit Fehlerbehandlung
 def extract_structured_answers(solution_text, valid_tasks):
     result = {}
     lines = solution_text.split('\n')
     task_patterns = [
-        r'Aufgabe\s*(\d+)\s*:\s*(.+)',
-        r'Task\s*(\d+)\s*:\s*(.+)',
-        r'(\d+)[\.\)]\s*(.+)'
+        r'Aufgabe\s*(\d+)\s*:\s*(.+)',  # Aufgabe X: Antwort
+        r'Task\s*(\d+)\s*:\s*(.+)',    # Task X: Antwort
+        r'(\d+)[\.\)]\s*(.+)'          # X. oder X) Antwort
     ]
     
     current_task = None
@@ -134,6 +138,11 @@ def extract_structured_answers(solution_text, valid_tasks):
             'reasoning': ' '.join(current_reasoning).strip()
         }
     
+    # Fallback für fehlende Antworten
+    for task in valid_tasks:
+        if f"Aufgabe {task}" not in result:
+            result[f"Aufgabe {task}"] = {'answer': '--', 'reasoning': 'Keine Antwort gefunden'}
+    
     return result
 
 def normalize_answer(raw_answer):
@@ -144,9 +153,9 @@ def normalize_answer(raw_answer):
     numeric_match = re.search(r'[\d,.\-]+', answer)
     if numeric_match:
         return numeric_match.group(0)
-    return answer
+    return answer if answer else '--'
 
-# --- Antwortvergleich ---
+# Antwortvergleich
 def answers_are_equivalent(answer1, answer2):
     if answer1 == answer2:
         return True
@@ -161,7 +170,7 @@ def answers_are_equivalent(answer1, answer2):
     except:
         return answer1.lower() == answer2.lower()
 
-# --- Optimierter Prompt ---
+# Optimierter Prompt
 def create_optimized_prompt(ocr_text, tasks):
     tasks_str = ', '.join(tasks)
     return f"""Du bist ein Experte für "Internes Rechnungswesen (31031)" an der Fernuni Hagen.
@@ -187,12 +196,12 @@ AUSGABEFORMAT (EXAKT EINHALTEN):
 Aufgabe [Nr]: [Antwort]
 Begründung: [Kurze Erklärung auf Deutsch]"""
 
-# --- Retry-Dekorator für API-Aufrufe ---
+# Retry-Dekorator
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10), retry=retry_if_exception_type((AnthropicError, OpenAIError)))
 def call_with_retry(func, *args, **kwargs):
     return func(*args, **kwargs)
 
-# --- Claude Solver mit Selbstkorrektur ---
+# Claude Solver mit Selbstkorrektur
 def solve_with_claude(ocr_text, tasks):
     prompt = create_optimized_prompt(ocr_text, tasks)
     
@@ -221,21 +230,20 @@ Begründung: [Text]"""
             correction = call_with_retry(
                 lambda: claude_client.messages.create(
                     model="claude-4-opus-20250514",
-                    max_tokens=8000,
+                    max_tokens=4000,
                     temperature=0.1,
                     messages=[{"role": "user", "content": correction_prompt}]
                 )
             )
             solution = correction.content[0].text
         
-        time.sleep(2)  # Verzögerung zwischen Aufrufen
         return solution
         
     except Exception as e:
         logger.error(f"Claude Error: {str(e)}")
-        raise e
+        return f"Fehler bei Claude: {str(e)}"
 
-# --- GPT Solver ---
+# GPT Solver
 def solve_with_gpt(ocr_text, tasks):
     prompt = create_optimized_prompt(ocr_text, tasks)
     
@@ -248,16 +256,15 @@ def solve_with_gpt(ocr_text, tasks):
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=4000,
-                temperature=0.2
+                temperature=0.1
             )
         )
-        time.sleep(2)  # Verzögerung
         return response.choices[0].message.content
     except Exception as e:
         logger.error(f"GPT Error: {str(e)}")
-        return None
+        return f"Fehler bei GPT: {str(e)}"
 
-# --- Kreuzvalidierung ---
+# Optimierte Kreuzvalidierung
 def enhanced_cross_validation(ocr_text, tasks):
     st.markdown("### 🔄 Erweiterte Kreuzvalidierung")
     
@@ -267,12 +274,12 @@ def enhanced_cross_validation(ocr_text, tasks):
     
     with st.spinner("GPT-4 Turbo validiert..."):
         gpt_solution = solve_with_gpt(ocr_text, tasks)
-        gpt_data = extract_structured_answers(gpt_solution, tasks) if gpt_solution else {}
+        gpt_data = extract_structured_answers(gpt_solution, tasks)
     
     final_answers = {}
     for task in tasks:
-        claude_ans = claude_data.get(f"Aufgabe {task}", {}).get('answer', '')
-        gpt_ans = gpt_data.get(f"Aufgabe {task}", {}).get('answer', '')
+        claude_ans = claude_data.get(f"Aufgabe {task}", {}).get('answer', '--')
+        gpt_ans = gpt_data.get(f"Aufgabe {task}", {}).get('answer', '--')
         
         col1, col2, col3, col4 = st.columns([2, 3, 3, 1])
         with col1:
@@ -282,22 +289,22 @@ def enhanced_cross_validation(ocr_text, tasks):
         with col3:
             st.write(f"GPT: `{gpt_ans}`")
         
-        if claude_ans and gpt_ans and answers_are_equivalent(claude_ans, gpt_ans):
+        if claude_ans != '--' and gpt_ans != '--' and answers_are_equivalent(claude_ans, gpt_ans):
             final_answers[f"Aufgabe {task}"] = claude_data[f"Aufgabe {task}"]
             with col4:
                 st.write("✅")
-        elif claude_ans:
+        elif claude_ans != '--':
             final_answers[f"Aufgabe {task}"] = claude_data[f"Aufgabe {task}"]
             with col4:
                 st.write("⚠️")
         else:
-            final_answers[f"Aufgabe {task}"] = gpt_data.get(f"Aufgabe {task}", {})
+            final_answers[f"Aufgabe {task}"] = gpt_data[f"Aufgabe {task}"]
             with col4:
                 st.write("🔍")
     
     return final_answers, claude_solution, gpt_solution
 
-# --- Hauptinterface ---
+# Hauptinterface
 debug_mode = st.checkbox("🔍 Debug-Modus", value=False)
 
 uploaded_file = st.file_uploader("**Klausuraufgabe hochladen...**", type=["png", "jpg", "jpeg"])
@@ -347,7 +354,7 @@ if uploaded_file is not None:
                         st.code(claude_full)
                 with col2:
                     with st.expander("GPT Vollständige Lösung"):
-                        st.code(gpt_full if gpt_full else "Keine Lösung")
+                        st.code(gpt_full)
                         
     except Exception as e:
         logger.error(f"Error: {str(e)}")
@@ -355,4 +362,4 @@ if uploaded_file is not None:
 
 # Footer
 st.markdown("---")
-st.caption("Made by Fox & Koi-9 ❤️ | Gemini Flash 1.5 | Claude Opus 4 | GPT-4 Turbo ")
+st.caption("Made by Fox & Koi-9 ❤️ | Gemini Flash 1.5 | Claude Opus 4 | GPT-4 Turbo")
