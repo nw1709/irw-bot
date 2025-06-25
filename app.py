@@ -6,6 +6,8 @@ import google.generativeai as genai
 import logging
 import hashlib
 import re
+import time
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # --- Logger Setup ---
 logging.basicConfig(level=logging.INFO)
@@ -177,6 +179,11 @@ AUSGABEFORMAT (EXAKT EINHALTEN):
 Aufgabe [Nr]: [Antwort]
 Begründung: [Kurze Erklärung auf Deutsch]"""
 
+# --- Retry-Dekorator für API-Aufrufe ---
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10), retry=retry_if_exception_type((AnthropicError, OpenAIError)))
+def call_with_retry(func, *args, **kwargs):
+    return func(*args, **kwargs)
+    
 # --- Claude Solver mit Selbstkorrektur ---
 def solve_with_claude(ocr_text, tasks):
     prompt = create_optimized_prompt(ocr_text, tasks)
@@ -188,9 +195,11 @@ def solve_with_claude(ocr_text, tasks):
             temperature=0.1,
             system="Löse NUR die im OCR-Text vorhandenen Aufgaben. Format: 'Aufgabe X: [Antwort]'",
             messages=[{"role": "user", "content": prompt}]
+            )
         )
         
         solution = response.content[0].text
+
         
         # Selbstkorrektur
         invalid_tasks = [t for t in re.findall(r'Aufgabe\s*(\d+)', solution) if t not in tasks]
@@ -204,12 +213,13 @@ Aufgabe [Nr]: [Antwort]
 Begründung: [Text]"""
             correction = claude_client.messages.create(
                 model="claude-4-opus-20250514",
-                max_tokens=2000,
+                max_tokens=8000,
                 temperature=0.1,
                 messages=[{"role": "user", "content": correction_prompt}]
             )
             solution = correction.content[0].text
-        
+
+         time.sleep(2)  # Verzögerung zwischen Aufrufen
         return solution
         
     except Exception as e:
@@ -229,12 +239,14 @@ def solve_with_gpt(ocr_text, tasks):
             ],
             max_tokens=4000,
             temperature=0.2
+           )
         )
+        time.sleep(2)  # Verzögerung
         return response.choices[0].message.content
     except Exception as e:
         logger.error(f"GPT Error: {str(e)}")
         return None
-
+        
 # --- Kreuzvalidierung ---
 def enhanced_cross_validation(ocr_text, tasks):
     st.markdown("### 🔄 Erweiterte Kreuzvalidierung")
