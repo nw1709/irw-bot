@@ -78,7 +78,7 @@ def extract_text_with_gemini(_image, file_hash):
 
 # --- Aufgaben-Extraktion ---
 def extract_tasks_from_ocr(ocr_text):
-    task_patterns = [r'Aufgabe\s*(\d+)', r'Task\s*(\d+)']
+    task_patterns = [r'Aufgabe\s*(\d+)', r'Task\s*(\d+)', r'(\d+)[\.\)]']  # Erweitert um Nummerierungen wie 1. oder 1)
     tasks = set()
     for pattern in task_patterns:
         matches = re.findall(pattern, ocr_text, re.IGNORECASE)
@@ -355,4 +355,4 @@ if uploaded_file is not None:
 
 # Footer
 st.markdown("---")
-st.caption("🦊 Koifox-Bot | Optimierte Fusion | Gemini Flash 1.5 + Claude Opus 4 + GPT-4 Turbo")
+st.caption("Made by Fox & Koi-9 ❤️ | Gemini Flash 1.5 | Claude Opus 4 | GPT-4 Turbo ")
