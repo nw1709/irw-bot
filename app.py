@@ -1,6 +1,6 @@
 import streamlit as st
-from anthropic import Anthropic
-from openai import OpenAI
+from anthropic import Anthropic, AnthropicError
+from openai import OpenAI, OpenAIError
 from PIL import Image
 import google.generativeai as genai
 import logging
@@ -34,11 +34,6 @@ def validate_keys():
         st.stop()
 
 validate_keys()
-
-# --- UI-Einstellungen ---
-st.set_page_config(layout="centered", page_title="Koifox-Bot", page_icon="🦊")
-st.title("🦊 Koifox-Bot")
-st.markdown("*Optimierte Fusion für maximale Präzision*")
 
 # --- API Clients ---
 genai.configure(api_key=st.secrets["gemini_key"])
@@ -183,7 +178,7 @@ Begründung: [Kurze Erklärung auf Deutsch]"""
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10), retry=retry_if_exception_type((AnthropicError, OpenAIError)))
 def call_with_retry(func, *args, **kwargs):
     return func(*args, **kwargs)
-    
+
 # --- Claude Solver mit Selbstkorrektur ---
 def solve_with_claude(ocr_text, tasks):
     prompt = create_optimized_prompt(ocr_text, tasks)
@@ -210,16 +205,17 @@ def solve_with_claude(ocr_text, tasks):
 FORMAT:
 Aufgabe [Nr]: [Antwort]
 Begründung: [Text]"""
-            correction = claude_client.messages.create(
-                model="claude-4-opus-20250514",
-                max_tokens=8000,
-                temperature=0.1,
-               messages=[{"role": "user", "content": correction_prompt}]
+            correction = call_with_retry(
+                lambda: claude_client.messages.create(
+                    model="claude-4-opus-20250514",
+                    max_tokens=8000,
+                    temperature=0.1,
+                    messages=[{"role": "user", "content": correction_prompt}]
                 )
             )
             solution = correction.content[0].text
-
-         time.sleep(2)  # Verzögerung zwischen Aufrufen
+        
+        time.sleep(2)  # Verzögerung zwischen Aufrufen
         return solution
         
     except Exception as e:
@@ -231,22 +227,23 @@ def solve_with_gpt(ocr_text, tasks):
     prompt = create_optimized_prompt(ocr_text, tasks)
     
     try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4-turbo",
-            messages=[
-                {"role": "system", "content": "Löse NUR die im OCR-Text vorhandenen Aufgaben präzise."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=4000,
-            temperature=0.2
-           )
+        response = call_with_retry(
+            lambda: openai_client.chat.completions.create(
+                model="gpt-4-turbo",
+                messages=[
+                    {"role": "system", "content": "Löse NUR die im OCR-Text vorhandenen Aufgaben präzise."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=4000,
+                temperature=0.2
+            )
         )
         time.sleep(2)  # Verzögerung
         return response.choices[0].message.content
     except Exception as e:
         logger.error(f"GPT Error: {str(e)}")
         return None
-        
+
 # --- Kreuzvalidierung ---
 def enhanced_cross_validation(ocr_text, tasks):
     st.markdown("### 🔄 Erweiterte Kreuzvalidierung")
