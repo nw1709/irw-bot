@@ -244,7 +244,7 @@ def solve_with_gpt(ocr_text, tasks):
     
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-o3",
+            model="o3-2025-04-16",
             messages=[
                 {
                     "role": "system", 
