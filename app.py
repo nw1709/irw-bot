@@ -244,7 +244,7 @@ def solve_with_gpt(ocr_text, tasks):
     
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-4-turbo",
+            model="gpt-o3",
             messages=[
                 {
                     "role": "system", 
@@ -252,7 +252,7 @@ def solve_with_gpt(ocr_text, tasks):
                 },
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=4000,
+            max_tokens=4096,
             temperature=0.1
         )
         
