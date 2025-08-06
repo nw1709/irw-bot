@@ -252,7 +252,7 @@ def solve_with_gpt(ocr_text, tasks):
                 },
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=4096,
+            max_completion_tokens,
             temperature=0.1
         )
         
