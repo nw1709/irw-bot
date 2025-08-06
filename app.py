@@ -253,7 +253,6 @@ def solve_with_gpt(ocr_text, tasks):
                 {"role": "user", "content": prompt}
             ],
             max_completion_tokens=4000,
-            temperature=0.1
         )
         
         return response.choices[0].message.content
