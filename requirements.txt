@@ -4,3 +4,4 @@ openai
 google-generativeai
 pillow
 sentence-transformers
+pdf2image
