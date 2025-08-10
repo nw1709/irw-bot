@@ -131,7 +131,7 @@ NO OTHER FORMAT IS ACCEPTABLE."""
                     ]
                 }
             ],
-            max_tokens=4000  # ← Chat Completions: max_tokens (nicht max_completion_tokens)
+            max_completion_tokens=4000
             # Optional (unterstützt von GPT-5): reasoning_effort="high", verbosity="low"
         )
         logger.info("Received response from OpenAI GPT-5")
