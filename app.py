@@ -25,7 +25,6 @@ st.set_page_config(layout="centered", page_title="KFB1", page_icon="🦊")
 st.title("🦊 Koifox-Bot 1 ")
 st.write("made with deep minimal & love by fox 🚀")
 
-
 # --- Logger Setup ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -62,11 +61,9 @@ def convert_to_image(uploaded_file):
         if file_extension in ['.png', '.jpeg', '.jpg', '.gif', '.webp']:
             image = Image.open(uploaded_file)
             if not image.format:
-                image = image.convert('RGB')  # Zwangs-Konvertierung, falls Format nicht erkannt
+                image = image.convert('RGB')
             logger.info(f"Loaded image with format: {image.format}")
             return image
-        
-        
         else:
             st.error(f"❌ Nicht unterstütztes Format: {file_extension}. Bitte lade PNG, JPEG, GIF, WebP oder PDF hoch.")
             st.stop()
@@ -76,16 +73,15 @@ def convert_to_image(uploaded_file):
         st.error(f"❌ Fehler bei der Konvertierung: {str(e)}")
         return None
 
-# --- OpenAI o3 Solver mit Bildverarbeitung ---
-def solve_with_o3(image):
+# --- GPT-5 Solver mit Bildverarbeitung ---
+def solve_with_gpt5(image):
     try:
-        logger.info("Preparing image for GPT 5")
+        logger.info("Preparing image for GPT-5")
         img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='JPEG', quality=85)  # Qualität anpassen
+        image.save(img_byte_arr, format='JPEG', quality=85)
         img_bytes = img_byte_arr.getvalue()
         logger.info(f"Image size in bytes: {len(img_bytes)}")
 
-        # Base64 kodieren und überprüfen
         img_base64 = base64.b64encode(img_bytes).decode('utf-8')
         logger.info(f"Base64 encoded length: {len(img_base64)}")
 
@@ -108,23 +104,25 @@ CRITICAL: You MUST provide answers in this EXACT format for EVERY task found:
 Aufgabe [Nr]: [Final answer]
 Begründung: [1 brief but consise sentence in German]
 
-NO OTHER FORMAT IS ACCEPTABLE. """
+NO OTHER FORMAT IS ACCEPTABLE."""
                 },
                 {
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "Extract all text from the provided exam image EXACTLY as written, including every detail from graphs, charts, or sketches. For graphs: Explicitly list ALL axis labels, ALL scales, ALL intersection points with axes (e.g., 'x-axis at 450', 'y-axis at 20'), and EVERY numerical value or annotation. Then, solve ONLY the tasks identified (e.g., Aufgabe 1). Use the following format: Aufgabe [number]: [Your answer here] Begründung: [Short explanation]. Do NOT mention or solve other tasks!"},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}", "detail": "high"}}
                     ]
                 }
             ],
-            max_completion_tokens=4000
+            max_tokens=4000  # ← Chat Completions: max_tokens (nicht max_completion_tokens)
+            # Optional (unterstützt von GPT-5): reasoning_effort="high", verbosity="low"
         )
-        logger.info("Received response from OpenAI o3")
+        logger.info("Received response from OpenAI GPT-5")
         return response.choices[0].message.content
+
     except OpenAIError as e:
         logger.error(f"GPT-5 API Error: {str(e)}")
-        st.error(f"❌ GPT-5API Fehler: {str(e)}")
+        st.error(f"❌ GPT-5 API Fehler: {str(e)}")
         return None
     except Exception as e:
         logger.error(f"Unexpected GPT-5 Error: {str(e)}")
@@ -140,32 +138,27 @@ if uploaded_file is not None:
     try:
         image = convert_to_image(uploaded_file)
         if image:
-            # Rotation-Status im Session State initialisieren
             if "rotation" not in st.session_state:
                 st.session_state.rotation = 0
 
-            # Button zum Drehen
             if st.button("Bild drehen"):
                 st.session_state.rotation = (st.session_state.rotation + 90) % 360
 
-            # Bild drehen (PIL dreht gegen den Uhrzeigersinn, daher minus)
             rotated_img = image.rotate(-st.session_state.rotation, expand=True)
 
-            # Vorschau anzeigen
             st.image(rotated_img, caption=f"Verarbeitetes Bild (gedreht um {st.session_state.rotation}°)", use_container_width=True)
 
-            # Button zum Lösen mit gedrehtem Bild
             if st.button("🧮 Aufgabe(n) lösen", type="primary"):
                 st.markdown("---")
                 with st.spinner("GPT-5 analysiert..."):
-                    o3_solution = solve_with_gpt-5(rotated_img)
+                    gpt5_solution = solve_with_gpt5(rotated_img)
 
-                if o3_solution:
+                if gpt5_solution:
                     st.markdown("### 🎯 FINALE LÖSUNG")
-                    st.markdown(gpt-5_solution)
+                    st.markdown(gpt5_solution)
                     if debug_mode:
                         with st.expander("🔍 GPT-5 Rohausgabe"):
-                            st.code(gpt-5_solution)
+                            st.code(gpt5_solution)
                 else:
                     st.error("❌ Keine Lösung generiert")
     except Exception as e:
