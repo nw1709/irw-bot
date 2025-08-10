@@ -131,8 +131,7 @@ NO OTHER FORMAT IS ACCEPTABLE."""
                     ]
                 }
             ],
-            max_completion_tokens=10000,
-            reasoning_effort=high, verbosity=low
+            max_completion_tokens=10000
         )
         logger.info("Received response from OpenAI GPT-5")
         return response.choices[0].message.content
