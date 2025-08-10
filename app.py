@@ -57,17 +57,34 @@ def convert_to_image(uploaded_file):
     try:
         file_extension = os.path.splitext(uploaded_file.name)[1].lower()
         logger.info(f"Processing file with extension: {file_extension}")
-        
+
         if file_extension in ['.png', '.jpeg', '.jpg', '.gif', '.webp']:
             image = Image.open(uploaded_file)
             if not image.format:
                 image = image.convert('RGB')
             logger.info(f"Loaded image with format: {image.format}")
             return image
+
+        elif file_extension == '.pdf':
+            try:
+                from pdf2image import convert_from_bytes
+            except ImportError:
+                st.error("📄 PDF-Unterstützung fehlt: Bitte `pdf2image` in requirements.txt **und** `poppler-utils` in packages.txt hinzufügen (Streamlit Cloud) oder lokal Poppler installieren.")
+                st.stop()
+
+            # erste Seite konvertieren (falls mehrere Seiten, kannst du iterieren)
+            pages = convert_from_bytes(uploaded_file.read(), fmt='jpeg', dpi=300)
+            if not pages:
+                st.error("❌ Konnte keine Seite aus dem PDF extrahieren.")
+                st.stop()
+            image = pages[0].convert('RGB')
+            logger.info("Converted first PDF page to image.")
+            return image
+
         else:
             st.error(f"❌ Nicht unterstütztes Format: {file_extension}. Bitte lade PNG, JPEG, GIF, WebP oder PDF hoch.")
             st.stop()
-            
+
     except Exception as e:
         logger.error(f"Error converting file to image: {str(e)}")
         st.error(f"❌ Fehler bei der Konvertierung: {str(e)}")
