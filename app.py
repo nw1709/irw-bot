@@ -107,7 +107,6 @@ def solve_with_gpt(image):
                     ]
                 }
             ],
-            temperature=0.1,
             max_completion_tokens=8192 # Angepasst an die großzügigeren Limits neuerer Modelle
         )
         logger.info("Antwort von GPT-5 erhalten.")
