@@ -102,10 +102,7 @@ def solve_with_gpt(image):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Scanne das gesamte Bild von oben nach unten. Identifiziere ALLE Aufgaben (z.B. Aufgabe 1, Aufgabe 2, etc.).
-        Löse anschließend JEDE EINZELNE dieser Aufgaben der Reihe nach.
-        Zeige bei Berechnungen kurz den entscheidenden Rechenschritt oder die verwendete Formel.
-        Halte dich strikt an deine Systemanweisungen und das geforderte Ausgabeformat für JEDE Aufgabe."},
+                        {"type": "text", "text": "Scanne das gesamte Bild von oben nach unten. Identifiziere ALLE Aufgaben (z.B. Aufgabe 1, Aufgabe 2, etc.) und löse anschließend JEDE EINZELNE dieser Aufgaben der Reihe nach. Zeige bei Berechnungen kurz den entscheidenden Rechenschritt oder die verwendete Formel. Halte dich strikt an deine Systemanweisungen und das geforderte Ausgabeformat für JEDE Aufgabe."},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}", "detail": "high"}}
                     ]
                 }
