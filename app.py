@@ -1,11 +1,14 @@
 import streamlit as st
 from openai import OpenAI, OpenAIError
-from PIL import Image
+from PIL import Image, ImageEnhance
 import logging
 import io
+import base64
 import pdf2image
 import os
-import base64
+import pillow_heif
+
+# --- VORBEREITUNG ---
 
 # Meta-Tags und Icon für iOS Homescreen Shortcut
 st.markdown(f'''
@@ -16,8 +19,6 @@ st.markdown(f'''
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#FF6600"> 
-
-<!-- Optional: Splashscreen (kann später ergänzt werden) -->
 ''', unsafe_allow_html=True)
 
 st.set_page_config(layout="centered", page_title="KFB1", page_icon="🦊")
@@ -31,156 +32,154 @@ logger = logging.getLogger(__name__)
 
 # --- API Key Validation ---
 def validate_keys():
-    required_keys = {
-        'openai_key': ('sk-', "OpenAI")
-    }
-    missing = []
-    invalid = []
-    
-    for key, (prefix, name) in required_keys.items():
-        if key not in st.secrets:
-            missing.append(name)
-        elif not st.secrets[key].startswith(prefix):
-            invalid.append(name)
-    
-    if missing or invalid:
-        st.error(f"API Key Problem: Missing {', '.join(missing)} | Invalid {', '.join(invalid)}")
+    if "openai_key" not in st.secrets or not st.secrets["openai_key"].startswith("sk-"):
+        st.error("API Key Problem: 'openai_key' in Streamlit Secrets fehlt oder ist ungültig.")
         st.stop()
 
 validate_keys()
 
-# --- API Client ---
-openai_client = OpenAI(api_key=st.secrets["openai_key"])
+# --- API Client Initialisierung ---
+try:
+    openai_client = OpenAI(api_key=st.secrets["openai_key"])
+except Exception as e:
+    st.error(f"❌ Fehler bei der Initialisierung des OpenAI-Clients: {str(e)}")
+    st.stop()
 
-# --- Datei in Bild konvertieren ---
-def convert_to_image(uploaded_file):
+# --- BILDVERARBEITUNG & OPTIMIERUNG ---
+def process_and_prepare_image(uploaded_file):
+    # Diese Funktion ist exakt identisch mit der Gemini-Version für einen fairen Vergleich.
     try:
+        pillow_heif.register_heif_opener()
         file_extension = os.path.splitext(uploaded_file.name)[1].lower()
-        logger.info(f"Processing file with extension: {file_extension}")
+        logger.info(f"Verarbeite Datei mit der Endung: {file_extension}")
 
-        if file_extension in ['.png', '.jpeg', '.jpg', '.gif', '.webp']:
+        if file_extension in ['.png', '.jpeg', '.jpg', '.gif', '.webp', '.heic']:
             image = Image.open(uploaded_file)
-            if not image.format:
-                image = image.convert('RGB')
-            logger.info(f"Loaded image with format: {image.format}")
-            return image
-
         elif file_extension == '.pdf':
-            try:
-                from pdf2image import convert_from_bytes
-            except ImportError:
-                st.error("📄 PDF-Unterstützung fehlt: Bitte `pdf2image` in requirements.txt **und** `poppler-utils` in packages.txt hinzufügen (Streamlit Cloud) oder lokal Poppler installieren.")
-                st.stop()
-
-            # erste Seite konvertieren (falls mehrere Seiten, kannst du iterieren)
-            pages = convert_from_bytes(uploaded_file.read(), fmt='jpeg', dpi=300)
+            pages = pdf2image.convert_from_bytes(uploaded_file.read(), fmt='jpeg', dpi=300)
             if not pages:
                 st.error("❌ Konnte keine Seite aus dem PDF extrahieren.")
-                st.stop()
-            image = pages[0].convert('RGB')
-            logger.info("Converted first PDF page to image.")
-            return image
-
+                return None
+            image = pages[0]
         else:
-            st.error(f"❌ Nicht unterstütztes Format: {file_extension}. Bitte lade PNG, JPEG, GIF, WebP oder PDF hoch.")
-            st.stop()
+            st.error(f"❌ Nicht unterstütztes Format: {file_extension}.")
+            return None
 
+        if image.mode in ("RGBA", "P", "LA"):
+            image = image.convert("RGB")
+        image_gray = image.convert('L')
+        enhancer = ImageEnhance.Contrast(image_gray)
+        image_enhanced = enhancer.enhance(1.5)
+        final_image = image_enhanced.convert('RGB')
+        logger.info("Bild erfolgreich verarbeitet und für die KI optimiert.")
+        return final_image
     except Exception as e:
-        logger.error(f"Error converting file to image: {str(e)}")
-        st.error(f"❌ Fehler bei der Konvertierung: {str(e)}")
+        logger.error(f"Fehler bei der Bildverarbeitung: {str(e)}")
+        st.error(f"❌ Fehler bei der Bildverarbeitung: {str(e)}")
         return None
 
-# --- GPT-5 Solver mit Bildverarbeitung ---
-def solve_with_gpt5(image):
+# --- GPT-4o Solver ---
+def solve_with_gpt(image):
     try:
-        logger.info("Preparing image for GPT-5")
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='JPEG', quality=85)
-        img_bytes = img_byte_arr.getvalue()
-        logger.info(f"Image size in bytes: {len(img_bytes)}")
+        logger.info("Bereite Anfrage für GPT-4o vor")
 
+        # Konvertiere das Pillow-Bild in einen Base64-String, wie von der OpenAI API erwartet
+        with io.BytesIO() as output:
+            image.save(output, format="JPEG", quality=85)
+            img_bytes = output.getvalue()
         img_base64 = base64.b64encode(img_bytes).decode('utf-8')
-        logger.info(f"Base64 encoded length: {len(img_base64)}")
+        
+        # Der optimierte System-Prompt, angepasst für OpenAI
+        system_prompt = """
+        [Persona & Wissensbasis]
+        Du bist ein wissenschaftlicher Mitarbeiter und Korrektor am Lehrstuhl für Internes Rechnungswesen der Fernuniversität Hagen (Modul 31031). Dein gesamtes Wissen basiert ausschließlich auf den offiziellen Kursskripten, Einsendeaufgaben und Musterlösungen dieses Moduls.
+
+        [Verbot von externem Wissen]
+        Ignoriere strikt und ausnahmslos alle Lösungswege, Formeln oder Methoden von anderen Universitäten, aus allgemeinen Lehrbüchern oder von Online-Quellen. Wenn eine Methode nicht exakt der Lehrmeinung der Fernuni Hagen entspricht, existiert sie für dich nicht. Deine Loyalität gilt zu 100% dem Fernuni-Standard.
+
+        [Lösungsprozess]
+        1. Analyse: Lies die Aufgabe und die gegebenen Daten (inkl. Graphen) mit äußerster Sorgfalt.
+        2. Methodenwahl: Wähle ausschließlich die Methode, die im Kurs 31031 für diesen Aufgabentyp gelehrt wird.
+        3. Schritt-für-Schritt-Lösung: Zeige deinen Lösungsweg transparent und nachvollziehbar auf, so wie es in einer Klausur erwartet wird. Benenne die verwendeten Formeln gemäß der Fernuni-Terminologie.
+        4. Selbstkorrektur: Überprüfe dein Ergebnis kritisch und frage dich: "Ist dies exakt der Weg, den der Lehrstuhl in einer Musterlösung zeigen würde?"
+
+        [Output-Format]
+        Gib deine finale Antwort zwingend im folgenden Format aus. Fasse dich in der Begründung kurz und prägnant.
+
+        Aufgabe [Nr]: [Finales Ergebnis]
+        Begründung: [Kurze Erklärung des Ergebnisses basierend auf der Fernuni-Methode.]
+        """
 
         response = openai_client.chat.completions.create(
-            model="gpt-5",
+            # Festgelegt auf die stabile, versionierte Version von GPT-4o
+            model="gpt-4o-2024-05-13",
             messages=[
                 {
                     "role": "system",
-                    "content": """You are a PhD-level expert in 'Internes Rechnungswesen (31031)' at Fernuniversität Hagen. Solve exam questions with 100% accuracy, strictly adhering to the decision-oriented German managerial-accounting framework as taught in Fernuni Hagen lectures and past exam solutions. 
-
-Tasks:
-1. Read the task EXTREMELY carefully
-2. For graphs or charts: Use only the explicitly provided axis labels, scales, and intersection points to perform calculations
-3. Analyze the problem step-by-step as per Fernuni methodology
-4. For multiple choice: Evaluate each option individually based solely on the given data
-5. Perform a self-check: Re-evaluate your answer to ensure it aligns with Fernuni standards and the exact OCR input
-
-CRITICAL: You MUST provide answers in this EXACT format for EVERY task found:
-
-Aufgabe [Nr]: [Final answer]
-Begründung: [1 brief but consise sentence in German]
-
-NO OTHER FORMAT IS ACCEPTABLE."""
+                    "content": system_prompt
                 },
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Extract all text from the provided exam image EXACTLY as written, including every detail from graphs, charts, or sketches. For graphs: Explicitly list ALL axis labels, ALL scales, ALL intersection points with axes (e.g., 'x-axis at 450', 'y-axis at 20'), and EVERY numerical value or annotation. Then, solve ONLY the tasks identified (e.g., Aufgabe 1). Use the following format: Aufgabe [number]: [Your answer here] Begründung: [Short explanation]. Do NOT mention or solve other tasks!"},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}", "detail": "high"}}
+                        {"type": "text", "text": "Lies die Informationen aus dem bereitgestellten Bild. Löse anschließend die darauf sichtbare Aufgabe gemäß deiner Anweisungen und halte dich strikt an das geforderte Ausgabeformat."},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{img_base64}",
+                                "detail": "high" # "high" für maximale Detailtreue
+                            }
+                        }
                     ]
                 }
             ],
-            max_completion_tokens=10000
+            temperature=0.1, # Auf 0.1 für maximale Präzision gesetzt
+            max_tokens=4096   # Großzügiges Token-Limit für die Ausgabe
         )
-        logger.info("Received response from OpenAI GPT-5")
+        logger.info("Antwort von GPT-4o erhalten.")
         return response.choices[0].message.content
 
     except OpenAIError as e:
-        logger.error(f"GPT-5 API Error: {str(e)}")
-        st.error(f"❌ GPT-5 API Fehler: {str(e)}")
+        logger.error(f"OpenAI API Fehler: {str(e)}")
+        st.error(f"❌ OpenAI API Fehler: {str(e)}")
         return None
     except Exception as e:
-        logger.error(f"Unexpected GPT-5 Error: {str(e)}")
-        st.error(f"❌ Unerwarteter Fehler: {str(e)}")
+        logger.error(f"Unerwarteter Fehler: {str(e)}")
+        st.error(f"❌ Ein unerwarteter Fehler ist aufgetreten: {str(e)}")
         return None
+
 
 # --- HAUPTINTERFACE ---
 debug_mode = st.checkbox("🔍 Debug-Modus", value=False)
-
-uploaded_file = st.file_uploader("**Klausuraufgabe hochladen...**", type=["png", "jpg", "jpeg", "gif", "webp", "pdf"])
-
+uploaded_file = st.file_uploader(
+    "**Klausuraufgabe hochladen...**", 
+    type=["png", "jpg", "jpeg", "gif", "webp", "pdf", "heic"]
+)
 if uploaded_file is not None:
     try:
-        image = convert_to_image(uploaded_file)
-        if image:
+        processed_image = process_and_prepare_image(uploaded_file)
+        if processed_image:
             if "rotation" not in st.session_state:
                 st.session_state.rotation = 0
-
-            if st.button("Bild drehen"):
+            if st.button("🔄 Bild drehen"):
                 st.session_state.rotation = (st.session_state.rotation + 90) % 360
-
-            rotated_img = image.rotate(-st.session_state.rotation, expand=True)
-
-            st.image(rotated_img, caption=f"Verarbeitetes Bild (gedreht um {st.session_state.rotation}°)", use_container_width=True)
-
+            rotated_img = processed_image.rotate(-st.session_state.rotation, expand=True)
+            st.image(rotated_img, caption=f"Optimiertes Bild (gedreht um {st.session_state.rotation}°)", use_container_width=True)
             if st.button("🧮 Aufgabe(n) lösen", type="primary"):
                 st.markdown("---")
-                with st.spinner("GPT-5 analysiert..."):
-                    gpt5_solution = solve_with_gpt5(rotated_img)
-
-                if gpt5_solution:
+                with st.spinner("GPT-4o analysiert das Bild..."):
+                    gpt_solution = solve_with_gpt(rotated_img)
+                if gpt_solution:
                     st.markdown("### 🎯 FINALE LÖSUNG")
-                    st.markdown(gpt5_solution)
+                    st.markdown(gpt_solution)
                     if debug_mode:
-                        with st.expander("🔍 GPT-5 Rohausgabe"):
-                            st.code(gpt5_solution)
+                        with st.expander("🔍 GPT-4o Rohausgabe"):
+                            st.code(gpt_solution)
                 else:
                     st.error("❌ Keine Lösung generiert")
     except Exception as e:
-        logger.error(f"Error processing file: {str(e)}")
-        st.error(f"❌ Fehler bei der Verarbeitung: {str(e)}")
+        logger.error(f"Fehler im Hauptprozess: {str(e)}")
+        st.error(f"❌ Ein unerwarteter Fehler ist aufgetreten: {str(e)}")
 
 # Footer
 st.markdown("---")
-st.caption("Made by Fox & Koi-9 ❤️ | OpenAI GPT-5")
+st.caption("Made by Fox & Koi-9 ❤️ | OpenAI GPT-4o (stable)")
