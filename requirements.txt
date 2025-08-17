@@ -1,7 +1,7 @@
 streamlit
+Pillow
+pdf2image
+pillow-heif
 anthropic
 openai
 google-generativeai
-pillow
-sentence-transformers
-pdf2image
